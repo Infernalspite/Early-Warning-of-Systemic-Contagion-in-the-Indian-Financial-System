@@ -1,0 +1,12 @@
+{
+  "model": "XGBClassifier",
+  "split_date": "2022-01-01",
+  "n_train": 1714,
+  "n_test": 1111,
+  "scale_pos_weight": 14.1681,
+  "accuracy": 0.973,
+  "precision": 0.0,
+  "recall": 0.0,
+  "f1": 0.0,
+  "roc_auc": 0.8493
+}

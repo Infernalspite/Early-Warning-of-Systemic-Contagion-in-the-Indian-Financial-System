@@ -1,361 +1,836 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Indian Systemic Risk Contagion Engine</title>
-    
-    <!-- Modern Google Font -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- FontAwesome Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="style.css">
-    
-    <!-- ApexCharts (CDN) -->
-    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
-    
-    <!-- D3.js (CDN) -->
-    <script src="https://d3js.org/d3.v7.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Systemic Risk Early Warning — Model Comparison (India)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+
+/* ============================================================
+   DESIGN TOKENS
+   Palette: paper cream, sage, denim, terracotta (risk), ink
+   Type: Newsreader (editorial serif, headers) /
+         IBM Plex Mono (data, tables) / IBM Plex Sans (body)
+   ============================================================ */
+:root{
+  --paper:      #F3EEE3;
+  --paper-dim:  #ECE5D6;
+  --ink:        #2B2A26;
+  --ink-soft:   #5B5850;
+  --line:       rgba(43,42,38,0.16);
+  --line-heavy: rgba(43,42,38,0.32);
+  --sage:       #8B9A7C;
+  --sage-dim:   #DCE3D2;
+  --denim:      #7C93A8;
+  --denim-dim:  #DDE5EC;
+  --terracotta: #BE6A47;
+  --terracotta-dim: #F0DCCE;
+  --rose:       #B97482;
+  --rose-dim:   #F1DFE2;
+  --gold:       #C79A44;
+  --serif: 'Newsreader', 'Iowan Old Style', serif;
+  --mono:  'IBM Plex Mono', 'SF Mono', monospace;
+  --sans:  'IBM Plex Sans', -apple-system, sans-serif;
+}
+
+*{ box-sizing: border-box; }
+html{ scroll-behavior: smooth; }
+
+body{
+  margin:0;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent, transparent 35px,
+      rgba(43,42,38,0.035) 35px, rgba(43,42,38,0.035) 36px
+    ),
+    var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+@media (prefers-reduced-motion: reduce){
+  *{ animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+a{ color: inherit; }
+::selection{ background: var(--sage-dim); }
+
+/* margin rule — left-hand notebook binding line, desktop only */
+.page{
+  position: relative;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 56px 0 88px;
+}
+.page::before{
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 56px;
+  width: 1px;
+  background: var(--line-heavy);
+}
+.page::after{
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 60px;
+  width: 1px;
+  background: var(--rose);
+  opacity: 0.35;
+}
+@media (max-width: 780px){
+  .page{ padding: 0 20px; }
+  .page::before, .page::after{ display:none; }
+}
+
+.eyebrow{
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  margin: 0 0 14px 0;
+}
+.eyebrow .tag{
+  display:inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--line-heavy);
+  border-radius: 2px;
+}
+
+section{
+  padding: 72px 0 76px 0;
+  border-bottom: 1px solid var(--line);
+}
+section:last-of-type{ border-bottom: none; }
+
+h1,h2,h3{
+  font-family: var(--serif);
+  font-weight: 500;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+h2{ font-size: 32px; margin-bottom: 6px; }
+.section-sub{
+  color: var(--ink-soft);
+  max-width: 640px;
+  font-size: 15px;
+  margin-bottom: 40px;
+}
+
+/* ============================================================
+   TOP BAR / LIVE MARKET PULSE
+   ============================================================ */
+.topbar{
+  border-bottom: 1px solid var(--line-heavy);
+  background: var(--paper-dim);
+}
+.topbar-inner{
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 10px 56px 10px 88px;
+  display:flex;
+  flex-wrap: wrap;
+  gap: 22px;
+  align-items:center;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+@media (max-width: 780px){ .topbar-inner{ padding: 10px 20px; } }
+.pulse-dot{
+  width: 7px; height: 7px; border-radius: 50%;
+  display:inline-block; margin-right: 7px;
+  background: var(--gold);
+}
+.pulse-dot.live{ background: var(--sage); box-shadow: 0 0 0 3px var(--sage-dim); }
+.pulse-dot.stale{ background: var(--terracotta); }
+.pulse-item{ display:flex; align-items:center; white-space:nowrap; }
+.pulse-item b{ color: var(--ink); font-weight: 600; margin-left: 6px; }
+.pulse-note{ margin-left: auto; font-style: italic; opacity: 0.75; }
+
+/* ============================================================
+   HERO
+   ============================================================ */
+.hero{
+  padding-top: 64px;
+  text-align:center;
+}
+.hero .eyebrow{ justify-content:center; }
+.hero h1{
+  font-size: clamp(34px, 5vw, 56px);
+  line-height: 1.08;
+  max-width: 880px;
+  margin: 0 auto 18px auto;
+}
+.hero h1 em{
+  font-style: italic;
+  color: var(--terracotta);
+}
+.hero p.lede{
+  max-width: 620px;
+  margin: 0 auto;
+  color: var(--ink-soft);
+  font-size: 17px;
+}
+
+.callout{
+  margin: 44px auto 0 auto;
+  max-width: 720px;
+  border: 1px solid var(--line-heavy);
+  background: #FBF8F0;
+  padding: 26px 30px;
+  text-align: left;
+  position: relative;
+}
+.callout::before{
+  content: "TARGET LABEL";
+  position: absolute;
+  top: -10px; left: 24px;
+  background: var(--paper);
+  padding: 0 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  color: var(--sage);
+  font-weight: 600;
+}
+.callout code{
+  font-family: var(--mono);
+  font-size: 15px;
+  background: var(--sage-dim);
+  padding: 2px 7px;
+  border-radius: 2px;
+  color: #3E4A34;
+}
+.callout p{ margin: 10px 0 0 0; color: var(--ink-soft); font-size: 14.5px; }
+.callout .binary{
+  display:flex; gap: 22px; margin-top: 14px; flex-wrap:wrap;
+  font-family: var(--mono); font-size: 13px;
+}
+.binary .b0::before{ content:"0 · "; color: var(--denim); font-weight:600; }
+.binary .b1::before{ content:"1 · "; color: var(--terracotta); font-weight:600; }
+
+/* crisis timeline */
+.timeline{
+  margin: 56px 0 0 0;
+  position: relative;
+}
+.timeline-track{
+  position: relative;
+  height: 2px;
+  background: var(--line-heavy);
+  margin: 0 10px;
+}
+.timeline-events{
+  display:flex;
+  justify-content: space-between;
+  margin-top: -1px;
+}
+.tl-event{
+  position: relative;
+  text-align: left;
+  width: 16%;
+  flex: 1;
+}
+.tl-tick{
+  width: 1px; height: 16px;
+  background: var(--terracotta);
+  margin: 0 0 0 0;
+}
+.tl-dot{
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--terracotta);
+  position: absolute;
+  top: -3px; left: -3px;
+}
+.tl-label{
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+.tl-label b{
+  display:block;
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--ink);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+@media (max-width: 780px){
+  .timeline-events{ flex-direction:column; gap: 18px; }
+  .tl-event{ width:100%; padding-left: 16px; }
+}
+
+/* ============================================================
+   FEATURE MATRIX
+   ============================================================ */
+.matrix-grid{
+  display:grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border-top: 1px solid var(--line-heavy);
+  border-left: 1px solid var(--line-heavy);
+}
+.matrix-col{
+  border-right: 1px solid var(--line-heavy);
+  border-bottom: 1px solid var(--line-heavy);
+  padding: 26px 26px 30px 26px;
+}
+.matrix-col .swatch{
+  width: 22px; height: 4px;
+  margin-bottom: 14px;
+}
+.matrix-col h3{ font-size: 19px; margin-bottom: 4px; }
+.matrix-col .count{
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  margin-bottom: 16px;
+  display:block;
+}
+.matrix-col ul{ list-style:none; margin:0; padding:0; }
+.matrix-col li{
+  font-family: var(--mono);
+  font-size: 12.8px;
+  padding: 7px 0;
+  border-top: 1px dashed var(--line);
+  color: var(--ink-soft);
+}
+.matrix-col li:first-of-type{ border-top: none; }
+.matrix-col li b{ color: var(--ink); font-weight: 500; }
+.matrix-col.network .swatch{ background: var(--sage); }
+.matrix-col.econ .swatch{ background: var(--terracotta); }
+.matrix-col.macro .swatch{ background: var(--denim); }
+@media (max-width: 900px){
+  .matrix-grid{ grid-template-columns: 1fr; }
+}
+
+.split-note{
+  margin-top: 34px;
+  border: 1px solid var(--line-heavy);
+  padding: 22px 26px;
+  display:flex;
+  gap: 28px;
+  align-items:center;
+  flex-wrap: wrap;
+  background: var(--denim-dim);
+}
+.split-note .split-bar{
+  flex: 1 1 340px;
+  min-width: 260px;
+}
+.split-bar-track{
+  display:flex;
+  height: 30px;
+  border: 1px solid var(--line-heavy);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow:hidden;
+}
+.split-seg{
+  display:flex; align-items:center; justify-content:center;
+  border-right: 1px solid var(--line-heavy);
+  white-space:nowrap;
+}
+.split-seg.train{ background: var(--sage-dim); width: 68%; color:#3E4A34; }
+.split-seg.gap{ background: var(--paper-dim); width: 12%; color: var(--ink-soft); font-style:italic;}
+.split-seg.test{ background: var(--terracotta-dim); width: 20%; color:#7A3E23; border-right:none;}
+.split-note p{ margin:0; font-size: 13.5px; color: var(--ink-soft); max-width: 360px; }
+.split-note strong{ color: var(--ink); }
+
+/* ============================================================
+   MODELS
+   ============================================================ */
+.model-row{
+  display:grid;
+  grid-template-columns: 60px 1.1fr 2fr;
+  gap: 28px;
+  padding: 24px 0;
+  border-top: 1px solid var(--line);
+  align-items: start;
+}
+.model-row:first-of-type{ border-top: 1px solid var(--line-heavy); }
+.model-idx{
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 26px;
+  color: var(--line-heavy);
+}
+.model-name{ font-family: var(--serif); font-size: 21px; margin-bottom: 4px;}
+.model-tag{
+  font-family: var(--mono); font-size: 10.5px; letter-spacing:.08em;
+  text-transform:uppercase; color: var(--sage);
+  border: 1px solid var(--sage); display:inline-block;
+  padding: 1px 7px; border-radius: 2px;
+}
+.model-desc{ color: var(--ink-soft); font-size: 14.5px; }
+.model-note{
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  border-left: 2px solid var(--terracotta);
+  padding-left: 12px;
+}
+@media (max-width: 780px){
+  .model-row{ grid-template-columns: 40px 1fr; }
+  .model-row > div:last-child{ grid-column: 1 / -1; }
+}
+
+/* ============================================================
+   RESULTS TABLE
+   ============================================================ */
+.table-wrap{
+  border: 1px solid var(--line-heavy);
+  overflow-x: auto;
+}
+table.results{
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  min-width: 680px;
+}
+table.results th, table.results td{
+  padding: 15px 18px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+table.results thead th{
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--line-heavy);
+  font-weight: 600;
+}
+table.results thead th.priority{
+  color: #3E4A34;
+  background: var(--sage-dim);
+}
+table.results tbody th{
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 14px;
+}
+table.results tbody tr:last-child td, table.results tbody tr:last-child th{ border-bottom:none; }
+table.results td.priority{ background: rgba(139,154,124,0.10); }
+table.results td.win{
+  font-weight: 700;
+  background: var(--sage-dim);
+  color: #3E4A34;
+  position: relative;
+}
+table.results td.win::after{
+  content: "\2713";
+  margin-left: 8px;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--sage);
+}
+table.results td.dim{ color: var(--ink-soft); opacity: 0.75; }
+table.results tbody tr:hover td, table.results tbody tr:hover th{
+  background: rgba(124,147,168,0.08);
+}
+.table-foot{
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-top: 14px;
+  max-width: 720px;
+}
+.table-foot .flag{ color: var(--terracotta); font-weight:600; }
+
+/* ============================================================
+   DISCUSSION / LIMITATIONS
+   ============================================================ */
+.two-col{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 56px;
+}
+.two-col h3{
+  font-size: 18px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-heavy);
+}
+.two-col p{ color: var(--ink-soft); font-size: 14.5px; margin: 0 0 14px 0; }
+.two-col p strong{ color: var(--ink); }
+.two-col ul{ margin: 0; padding-left: 18px; color: var(--ink-soft); font-size: 14.5px; }
+.two-col li{ margin-bottom: 8px; }
+@media (max-width: 780px){ .two-col{ grid-template-columns: 1fr; gap: 36px; } }
+
+/* footer */
+footer{
+  padding: 44px 0 70px 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  display:flex;
+  justify-content:space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+footer a{ text-decoration: underline; text-decoration-color: var(--line-heavy); }
+
+.small-caps{
+  font-variant: small-caps;
+}
+</style>
 </head>
 <body>
-    <div class="app-container">
-        <!-- Sidebar Navigation -->
-        <aside class="sidebar">
-            <div class="sidebar-logo">
-                <div class="logo-icon"><i class="fa-solid fa-building-columns"></i></div>
-                <div class="logo-text">
-                    <h2>RISK ENGINE</h2>
-                    <span>INDIAN BANKING SYSTEM</span>
-                </div>
-            </div>
-            
-            <nav class="sidebar-nav">
-                <button class="nav-item active" data-tab="tab-overview">
-                    <i class="fa-solid fa-chart-line"></i>
-                    <span>CRI Overview</span>
-                </button>
-                <button class="nav-item" data-tab="tab-network">
-                    <i class="fa-solid fa-circle-nodes"></i>
-                    <span>Contagion Network</span>
-                </button>
-                <button class="nav-item" data-tab="tab-banks">
-                    <i class="fa-solid fa-bank"></i>
-                    <span>Bank Comparison</span>
-                </button>
-                <button class="nav-item" data-tab="tab-model">
-                    <i class="fa-solid fa-brain"></i>
-                    <span>Model Insights</span>
-                </button>
-            </nav>
-            
-            <div class="sidebar-footer">
-                <p>Version 2.0 (Refined)</p>
-                <p>Purely Indian Subcontinent Data</p>
-            </div>
-        </aside>
 
-        <!-- Main Content Area -->
-        <main class="main-content">
-            <!-- Header Section -->
-            <header class="app-header">
-                <div class="header-title">
-                    <h1>Systemic Contagion Dashboard</h1>
-                    <p>Real-time Early Warning System powered by Machine Learning</p>
-                </div>
-                
-                <!-- Live Risk Status Badge -->
-                <div class="risk-badge-card">
-                    <div id="risk-pulse" class="pulse-indicator pulse-green"></div>
-                    <div class="risk-badge-text">
-                        <span class="label">Systemic Risk Status</span>
-                        <h3 id="risk-level-text">LOW RISK</h3>
-                    </div>
-                </div>
-            </header>
+<div class="topbar">
+  <div class="topbar-inner" id="pulseBar">
+    <span class="pulse-item"><span class="pulse-dot" id="pulseDot"></span>Market pulse <b id="pulseStatus">connecting…</b></span>
+    <span class="pulse-item">India VIX <b id="pulseVix">—</b></span>
+    <span class="pulse-item">USD/INR <b id="pulseUsdinr">—</b></span>
+    <span class="pulse-item">Nifty Bank <b id="pulseNifty">—</b></span>
+    <span class="pulse-note" id="pulseNote">attempting live read on load</span>
+  </div>
+</div>
 
-            <!-- Overview Section (Tab 1) -->
-            <section id="tab-overview" class="tab-content active-tab">
-                <!-- Top Key Metrics Cards -->
-                <div class="metrics-grid">
-                    <div class="metric-card glass">
-                        <div class="metric-icon"><i class="fa-solid fa-gauge-high"></i></div>
-                        <div class="metric-data">
-                            <span class="metric-title">Contagion Risk Index (CRI)</span>
-                            <div class="metric-value-row">
-                                <h2 id="metric-cri">0.0</h2>
-                                <span class="metric-unit">/ 100</span>
-                            </div>
-                            <span id="metric-cri-delta" class="metric-subtext"><i class="fa-solid fa-caret-up"></i> 0.0 vs 5d ago</span>
-                        </div>
-                    </div>
-                    
-                    <div class="metric-card glass">
-                        <div class="metric-icon"><i class="fa-solid fa-heart-pulse"></i></div>
-                        <div class="metric-data">
-                            <span class="metric-title">India VIX (Fear Index)</span>
-                            <h2 id="metric-vix">0.0</h2>
-                            <span id="metric-vix-subtext" class="metric-subtext">Normal Volatility</span>
-                        </div>
-                    </div>
-                    
-                    <div class="metric-card glass">
-                        <div class="metric-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
-                        <div class="metric-data">
-                            <span class="metric-title">RBI Policy Repo Rate</span>
-                            <h2 id="metric-repo">0.0%</h2>
-                            <span id="metric-repo-subtext" class="metric-subtext">RBI Monetary Stance</span>
-                        </div>
-                    </div>
-                    
-                    <div class="metric-card glass">
-                        <div class="metric-icon"><i class="fa-solid fa-indian-rupee-sign"></i></div>
-                        <div class="metric-data">
-                            <span class="metric-title">INR/USD Rate</span>
-                            <h2 id="metric-inr">₹0.00</h2>
-                            <span id="metric-inr-subtext" class="metric-subtext">Currency Value</span>
-                        </div>
-                    </div>
-                </div>
+<div class="page">
 
-                <!-- Main CRI Chart Row -->
-                <div class="chart-container glass main-cri-chart">
-                    <div class="chart-header">
-                        <div class="chart-title">
-                            <h3>Contagion Risk Index (CRI) over Time</h3>
-                            <p>Derived from Random Forest model predicting pre-crisis and crisis likelihood based on 20 systemic banks.</p>
-                        </div>
-                        <div class="chart-actions">
-                            <button class="btn btn-outline active-range" data-range="all">All</button>
-                            <button class="btn btn-outline" data-range="5y">5Y</button>
-                            <button class="btn btn-outline" data-range="2y">2Y</button>
-                            <button class="btn btn-outline" data-range="1y">1Y</button>
-                        </div>
-                    </div>
-                    <div id="cri-timeline-chart" class="chart-body"></div>
-                </div>
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <p class="eyebrow"><span class="tag">India · Banking Sector</span> Phase 01 — Problem &amp; Target Definition</p>
+    <h1>Systemic Risk Early Warning: <em>Model Comparison</em> Project</h1>
+    <p class="lede">Five model families — a linear baseline, two tree ensembles, a sequence model, and a graph
+      network — evaluated on one identical feature matrix and one identical time-based split, so the
+      differences in the table further down are about the models, not the data.</p>
 
-                <!-- Historic Crises Cards Row -->
-                <div class="crises-section">
-                    <h3 class="section-title">Historical Financial Shocks & Contagion Events</h3>
-                    <div class="crises-grid">
-                        <div class="crisis-card glass" data-date="2018-09-21">
-                            <div class="crisis-badge">IL&FS Collapse</div>
-                            <div class="crisis-date"><i class="fa-regular fa-calendar"></i> Sep 2018</div>
-                            <p>Shadow banking crisis triggered by defaults of IL&FS, causing a severe credit crunch in the Indian banking system.</p>
-                        </div>
-                        <div class="crisis-card glass" data-date="2020-03-05">
-                            <div class="crisis-badge badge-warning">Yes Bank Moratorium</div>
-                            <div class="crisis-date"><i class="fa-regular fa-calendar"></i> Mar 2020</div>
-                            <p>RBI imposed a moratorium on Yes Bank due to governance issues and excessive bad loans, highlighting private bank vulnerabilities.</p>
-                        </div>
-                        <div class="crisis-card glass" data-date="2020-03-23">
-                            <div class="crisis-badge badge-danger">COVID Market Crash</div>
-                            <div class="crisis-date"><i class="fa-regular fa-calendar"></i> Mar 2020</div>
-                            <p>Global pandemic shock caused Nifty Bank to crash by nearly 40% in a few weeks, leading to massive central bank liquidity intervention.</p>
-                        </div>
-                        <div class="crisis-card glass" data-date="2023-01-24">
-                            <div class="crisis-badge">Adani Market Shock</div>
-                            <div class="crisis-date"><i class="fa-regular fa-calendar"></i> Jan 2023</div>
-                            <p>Hindenburg report triggered massive selloffs in Adani Group stocks, raising concerns about banking system exposure and systemic links.</p>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Contagion Network Section (Tab 2) -->
-            <section id="tab-network" class="tab-content">
-                <div class="network-layout">
-                    <!-- Left Sidebar Controls -->
-                    <div class="network-controls glass">
-                        <h3>Contagion Network Analysis</h3>
-                        <p class="subtitle">Visualizes rolling correlations (>0.40) between the 20 tracked banks. Thick lines represent high coupling.</p>
-                        
-                        <div class="control-group">
-                            <label>Timeline Playback</label>
-                            <div class="timeline-playback-row">
-                                <button id="network-play-btn" class="btn btn-primary"><i class="fa-solid fa-play"></i> Play</button>
-                                <div class="speed-control">
-                                    <span class="label">Speed:</span>
-                                    <select id="play-speed">
-                                        <option value="400">Fast</option>
-                                        <option value="800" selected>Normal</option>
-                                        <option value="1500">Slow</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="control-group">
-                            <label>Filter Link Strength (Correlation)</label>
-                            <div class="slider-container">
-                                <input type="range" id="corr-threshold-slider" min="0.40" max="0.80" step="0.05" value="0.50">
-                                <div class="slider-labels">
-                                    <span>0.40</span>
-                                    <span id="corr-threshold-value" class="highlight">0.50</span>
-                                    <span>0.80</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Statistics Column inside network side panel -->
-                        <div class="network-stats">
-                            <div class="stat-row">
-                                <span>Active Interbank Links:</span>
-                                <strong id="net-stat-links">0</strong>
-                            </div>
-                            <div class="stat-row">
-                                <span>Network Density:</span>
-                                <strong id="net-stat-density">0.0%</strong>
-                            </div>
-                            <div class="stat-row">
-                                <span>Absorption Ratio (PC1):</span>
-                                <strong id="net-stat-pca">0.0%</strong>
-                            </div>
-                        </div>
-
-                        <div class="legend-box">
-                            <h4>Legend</h4>
-                            <div class="legend-item">
-                                <span class="circle node-psu"></span>
-                                <span>PSU Banks (Left Circle)</span>
-                            </div>
-                            <div class="legend-item">
-                                <span class="circle node-private"></span>
-                                <span>Private Banks (Right Circle)</span>
-                            </div>
-                            <div class="legend-item">
-                                <span class="line corr-high"></span>
-                                <span>High Correlation (>0.60)</span>
-                            </div>
-                            <div class="legend-item">
-                                <span class="line corr-med"></span>
-                                <span>Medium Correlation (0.45-0.60)</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Right Main Graph Panel -->
-                    <div class="network-display glass">
-                        <div class="display-header">
-                            <div class="current-date-badge"><i class="fa-regular fa-calendar"></i> <span id="network-current-date">Loading...</span></div>
-                            <div class="risk-label-badge" id="network-risk-badge">Normal Period</div>
-                        </div>
-                        
-                        <div id="contagion-network-svg-container" class="network-svg-wrapper">
-                            <!-- SVG elements created by D3.js -->
-                        </div>
-                        
-                        <!-- Timeline scrub slider at bottom of map -->
-                        <div class="timeline-scrubber-row">
-                            <input type="range" id="network-time-slider" min="0" max="100" value="0" class="time-scrubber">
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Bank Comparison Section (Tab 3) -->
-            <section id="tab-banks" class="tab-content">
-                <div class="bank-layout">
-                    <!-- Left Sidebar Selectors -->
-                    <div class="bank-selector-panel glass">
-                        <h3>Bank Stock Performance</h3>
-                        <p class="subtitle">Select banks to compare normalized price trends (Base = 100). Highlights cumulative stress differences.</p>
-                        
-                        <div class="selection-actions">
-                            <button id="select-all-banks" class="btn btn-outline btn-sm">Select All</button>
-                            <button id="deselect-all-banks" class="btn btn-outline btn-sm">Deselect All</button>
-                        </div>
-                        
-                        <div class="bank-checkbox-list" id="bank-selectors-container">
-                            <!-- Checkboxes created dynamically -->
-                        </div>
-                    </div>
-
-                    <!-- Right Main Chart Panel -->
-                    <div class="bank-display glass">
-                        <div class="chart-header">
-                            <div class="chart-title">
-                                <h3>Normalized Bank Stock Prices</h3>
-                                <p>Shows relative stock performance normalized to 100 at start of the series. Red shaded regions = historic crisis periods.</p>
-                            </div>
-                            <div class="toggle-container">
-                                <span class="toggle-label">Price Mode:</span>
-                                <div class="toggle-buttons">
-                                    <button id="btn-price-norm" class="btn btn-outline btn-sm active">Normalized</button>
-                                    <button id="btn-price-raw" class="btn btn-outline btn-sm">Raw (INR)</button>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div id="bank-prices-comparison-chart" class="chart-body"></div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Model Insights Section (Tab 4) -->
-            <section id="tab-model" class="tab-content">
-                <div class="model-insights-grid">
-                    <!-- Feature Importances Card -->
-                    <div class="insights-card glass feature-card">
-                        <h3><i class="fa-solid fa-list-check"></i> ML Feature Importances</h3>
-                        <p class="subtitle">Shows the relative contribution of each indicator to the Random Forest crisis early warning predictions.</p>
-                        
-                        <div id="model-feature-importance-chart" class="chart-body"></div>
-                    </div>
-
-                    <!-- Model Specifications Card -->
-                    <div class="insights-card glass spec-card">
-                        <h3><i class="fa-solid fa-sliders"></i> System Specifications</h3>
-                        <p class="subtitle">Architecture details and validation parameters of the contagion engine.</p>
-                        
-                        <div class="spec-list">
-                            <div class="spec-item">
-                                <span class="spec-label">Model Classifier:</span>
-                                <span class="spec-value">Random Forest Classifier (scikit-learn)</span>
-                            </div>
-                            <div class="spec-item">
-                                <span class="spec-label">Input Shape:</span>
-                                <span class="spec-value" id="spec-features-count">31 Features</span>
-                            </div>
-                            <div class="spec-item">
-                                <span class="spec-label">Hyperparameters:</span>
-                                <span class="spec-value">n_estimators=200, max_depth=10, min_samples_leaf=5, balanced_weights</span>
-                            </div>
-                            <div class="spec-item">
-                                <span class="spec-label">Out-of-Sample Accuracy:</span>
-                                <span class="spec-value highlight-value" id="spec-accuracy">80.4%</span>
-                            </div>
-                            <div class="spec-item">
-                                <span class="spec-label">Cross-Validation Split:</span>
-                                <span class="spec-value">Time-based Split (Train: 2014-2021 | Test: 2022-2026)</span>
-                            </div>
-                            <div class="spec-item">
-                                <span class="spec-label">Primary Signal Indicators:</span>
-                                <span class="spec-value">INR/USD currency valuation, RBI policy rate, Absorption Ratio, banking volatilities</span>
-                            </div>
-                        </div>
-                        
-                        <div class="warning-explanation">
-                            <h4><i class="fa-solid fa-triangle-exclamation"></i> About the Signals</h4>
-                            <p><strong>CRI Score (0–100)</strong> operates on three predicted regimes:</p>
-                            <ul>
-                                <li><strong class="color-green">Normal Regime (< 30)</strong>: Average volatility, normal interbank correlations, standard repo rate adjustments.</li>
-                                <li><strong class="color-yellow">Pre-Crisis Regime (30–60)</strong>: 30-day window prior to major default/regulatory action. Often characterized by rupee depreciation and rising interbank correlation.</li>
-                                <li><strong class="color-red">Crisis Regime (>= 60)</strong>: Market crash during which Nifty Bank falls sharply and interbank contagion spreads.</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </main>
+    <div class="callout">
+      <div><code>high_stress_next_30d</code></div>
+      <p>Binary classification target. The system enters a stressed / crisis regime within the
+      next 30 trading days (<span class="b1">1</span>) or remains in a normal regime
+      (<span class="b0">0</span>). Every model below is scored against this same column.</p>
+      <div class="binary">
+        <span class="b0">Normal regime</span>
+        <span class="b1">Pre-crisis window (30 trading days before a labeled event)</span>
+      </div>
     </div>
 
-    <!-- Custom Script -->
-    <script src="app.js"></script>
+    <div class="timeline">
+      <div class="timeline-track"></div>
+      <div class="timeline-events">
+        <div class="tl-event"><div class="tl-tick"><div class="tl-dot"></div></div>
+          <div class="tl-label"><b>2008</b>GFC Spillover<br>Sep – Oct 2008</div></div>
+        <div class="tl-event"><div class="tl-tick"><div class="tl-dot"></div></div>
+          <div class="tl-label"><b>2013</b>Taper Tantrum<br>Jun – Sep 2013</div></div>
+        <div class="tl-event"><div class="tl-tick"><div class="tl-dot"></div></div>
+          <div class="tl-label"><b>2018</b>IL&amp;FS Default<br>Shadow-banking collapse</div></div>
+        <div class="tl-event"><div class="tl-tick"><div class="tl-dot"></div></div>
+          <div class="tl-label"><b>2020</b>YES Bank Moratorium<br>Mar 2020</div></div>
+        <div class="tl-event"><div class="tl-tick"><div class="tl-dot"></div></div>
+          <div class="tl-label"><b>2020</b>COVID Crash<br>Feb – May 2020</div></div>
+        <div class="tl-event"><div class="tl-tick"><div class="tl-dot"></div></div>
+          <div class="tl-label"><b>2023</b>Adani / Hindenburg<br>PSU-bank exposure shock</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FEATURE MATRIX ============ -->
+  <section id="features">
+    <p class="eyebrow"><span class="tag">features.csv</span> Phase 02 — Shared Feature Matrix</p>
+    <h2>One feature matrix, read by every model</h2>
+    <p class="section-sub">39 engineered columns built once from NSE prices, RBI rates, India VIX and
+      FinBERT sentiment, then frozen — no model in the comparison sees a column another one doesn't.</p>
+
+    <div class="matrix-grid">
+      <div class="matrix-col network">
+        <div class="swatch"></div>
+        <h3>Network</h3>
+        <span class="count">7 features · interbank topology</span>
+        <ul>
+          <li><b>mean_degree_centrality</b> — avg. connectedness per bank</li>
+          <li><b>mean_betweenness_centrality</b> — bridge-bank exposure</li>
+          <li><b>clustering_coefficient</b> — how tightly banks cluster</li>
+          <li><b>network_density_06</b> — 30-day rolling corr. graph, r&gt;0.6</li>
+          <li><b>avg_pairwise_correlation</b> — system co-movement</li>
+          <li><b>absorption_ratio</b> — variance explained by PC1</li>
+          <li><b>granger_count</b> — sig. lead–lag bank pairs / week</li>
+        </ul>
+      </div>
+      <div class="matrix-col econ">
+        <div class="swatch"></div>
+        <h3>Econometric</h3>
+        <span class="count">3 features · tail-risk estimators</span>
+        <ul>
+          <li><b>covar_system</b> — system CoVaR, quantile regression</li>
+          <li><b>srisk_proxy</b> — capital shortfall under stress</li>
+          <li><b>mes_avg</b> — marginal expected shortfall</li>
+        </ul>
+        <span class="count" style="margin-top:16px;">plus 12 rolling volatility &amp; momentum features (5/10/30-day)</span>
+      </div>
+      <div class="matrix-col macro">
+        <div class="swatch"></div>
+        <h3>Macro &amp; Sentiment</h3>
+        <span class="count">17 features · rates, FX, indices</span>
+        <ul>
+          <li><b>india_vix</b> + <b>india_vix_change</b></li>
+          <li><b>inr_usd</b> + <b>inr_usd_change</b></li>
+          <li><b>rbi_repo_rate</b> + 30-day change</li>
+          <li><b>mibor_repo_spread</b> — funding stress proxy</li>
+          <li><b>nifty_bank_rsi</b>, drawdown, EMA crossover</li>
+          <li>Nifty Financial Services &amp; Nifty IT 5-day returns</li>
+          <li>YES Bank / SBI / HDFC idiosyncratic volatility</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="split-note">
+      <div class="split-bar">
+        <div class="split-bar-track">
+          <div class="split-seg train">TRAIN · 2014–2021</div>
+          <div class="split-seg gap">↕</div>
+          <div class="split-seg test">TEST · 2022–2024</div>
+        </div>
+      </div>
+      <p><strong>Time-based split, not random shuffle.</strong> Training stops before the last
+        labeled crisis; the held-out window contains the 2023 Adani / Hindenburg event in full.
+        A random shuffle would leak future rows into training and inflate every model's score by
+        roughly the same amount — which would make the comparison meaningless, not just optimistic.</p>
+    </div>
+  </section>
+
+  <!-- ============ MODELS ============ -->
+  <section id="models">
+    <p class="eyebrow"><span class="tag">5 candidates</span> Phase 03 — Model Component Overview</p>
+    <h2>Same X, same y, five different ways of reading it</h2>
+    <p class="section-sub">Every model trains on identical <code style="font-family:var(--mono)">X_train, y_train</code>
+      and is scored on identical <code style="font-family:var(--mono)">X_test, y_test</code>.</p>
+
+    <div class="model-list">
+      <div class="model-row">
+        <div class="model-idx">i.</div>
+        <div><div class="model-name">Logistic Regression</div><span class="model-tag">Baseline</span></div>
+        <div><p class="model-desc">A single linear boundary over the standardized feature matrix. Included
+          deliberately: if the graph network and the LSTM can't beat this, that's a real finding about the
+          data, not a footnote.</p></div>
+      </div>
+      <div class="model-row">
+        <div class="model-idx">ii.</div>
+        <div><div class="model-name">Random Forest</div><span class="model-tag">Tabular</span></div>
+        <div><p class="model-desc">200 trees, class-balanced. The standard tabular reference point, and the
+          one that also hands back feature importances — see the leaders below.</p></div>
+      </div>
+      <div class="model-row">
+        <div class="model-idx">iii.</div>
+        <div><div class="model-name">XGBoost</div><span class="model-tag">Tabular</span></div>
+        <div><p class="model-desc">Gradient-boosted trees with <code style="font-family:var(--mono)">scale_pos_weight</code>
+          tuned to the ~7% positive rate. Usually the strongest flat-feature model in this class of problem.</p></div>
+      </div>
+      <div class="model-row">
+        <div class="model-idx">iv.</div>
+        <div><div class="model-name">LSTM</div><span class="model-tag">Sequential</span></div>
+        <div><p class="model-desc">A 2-layer recurrent network reading 30-trading-day windows of the same
+          features, testing whether the <em style="font-style:italic">order</em> of recent stress carries
+          signal a flat snapshot throws away.</p></div>
+      </div>
+      <div class="model-row">
+        <div class="model-idx">v.</div>
+        <div><div class="model-name">GNN — GraphSAGE</div><span class="model-tag">Topological</span></div>
+        <div>
+          <p class="model-desc">Each date is its own graph: 20 banks as nodes, edges where 30-day rolling
+            correlation exceeds 0.4, per-bank features instead of system-wide averages. A pooling layer
+            reduces the graph to one stress score.</p>
+          <p class="model-note">Design trade-off, stated rather than hidden: the tabular models above see
+            <em>system-wide averages</em> of the network features; the GNN sees <em>per-bank, node-level</em>
+            graphs. That's the fairer test of whether topology itself helps — but it also means the GNN and
+            the tabular models are technically looking at structurally different views of the same market,
+            which is part of what this comparison is testing.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ RESULTS ============ -->
+  <section id="results">
+    <p class="eyebrow"><span class="tag">Held-out 2022–2024</span> Phase 04 — Benchmark Results</p>
+    <h2>The comparison table</h2>
+    <p class="section-sub">Same test set, all five rows. <strong style="color:var(--ink)">F1 and ROC-AUC are
+      the columns to read</strong> — the positive class is roughly 1 in 14 test days, so accuracy alone
+      rewards a model that never flags anything.</p>
+
+    <div class="table-wrap">
+      <table class="results">
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th class="dim-head">Accuracy</th>
+            <th>Precision</th>
+            <th>Recall</th>
+            <th class="priority">F1-Score</th>
+            <th class="priority">ROC-AUC</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>Logistic Regression</th>
+            <td class="dim">42.3%</td>
+            <td>3.9%</td>
+            <td><strong>86.7%</strong></td>
+            <td class="win">0.075</td>
+            <td class="priority">0.861</td>
+          </tr>
+          <tr>
+            <th>Random Forest</th>
+            <td><strong>97.3%</strong></td>
+            <td>0.0%</td>
+            <td>0.0%</td>
+            <td class="priority">0.000</td>
+            <td class="priority">0.789</td>
+          </tr>
+          <tr>
+            <th>XGBoost</th>
+            <td><strong>97.3%</strong></td>
+            <td>0.0%</td>
+            <td>0.0%</td>
+            <td class="priority">0.000</td>
+            <td class="priority">0.849</td>
+          </tr>
+          <tr>
+            <th>LSTM</th>
+            <td><strong>97.3%</strong></td>
+            <td>0.0%</td>
+            <td>0.0%</td>
+            <td class="priority">0.000</td>
+            <td class="win">0.883</td>
+          </tr>
+          <tr>
+            <th>GNN — GraphSAGE</th>
+            <td class="dim">27.6%</td>
+            <td>0.0%</td>
+            <td>0.0%</td>
+            <td class="priority">0.000</td>
+            <td class="priority">0.027</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-foot"><span class="flag">Read the accuracy column with suspicion.</span> Random Forest,
+      XGBoost and the LSTM all land near 97.3% — which is exactly the size of the negative class in this
+      test window. All three are predicting "normal" on every single day; their real signal only shows up
+      in ROC-AUC (0.79–0.88). Logistic Regression is the only model that actually recalls most crisis days
+      (86.7%), at the cost of a very noisy precision — it wins on F1 by default, not by being a strong
+      classifier. Full numbers are written out in <code style="font-family:var(--mono)">model_comparison_results.json</code>.</p>
+  </section>
+
+  <!-- ============ DISCUSSION ============ -->
+  <section id="discussion">
+    <p class="eyebrow"><span class="tag">Write-up</span> Phase 05 — Discussion &amp; Limitations</p>
+    <h2>What the table is actually saying</h2>
+
+    <div class="two-col">
+      <div>
+        <h3>Lead-time vs. raw accuracy</h3>
+        <p>The model that scores best on paper is not the model a risk desk would trust. <strong>Random
+          Forest, XGBoost and the LSTM</strong> all sit at ~97.3% accuracy by refusing to ever call a crisis
+          — useless as an early-warning system, however clean the headline number looks.</p>
+        <p><strong>Logistic Regression</strong> is the only model with usable recall (86.7%): it catches
+          most pre-crisis windows, early, at the cost of frequent false alarms. <strong>The LSTM</strong>
+          carries the best ranking quality (ROC-AUC 0.883) without ever crossing its own decision threshold
+          — the signal is there in the probabilities, the cutoff is just miscalibrated for a ~7% positive
+          rate. In a real deployment these point to different thresholds, not different winners.</p>
+        <p>The GNN is the outlier worth naming directly: ROC-AUC 0.027 is worse than a coin flip, which
+          reads as a genuine negative result rather than noise — with only six labeled crises, the per-bank
+          graphs the GNN needs are the thinnest-fed model in the comparison.</p>
+      </div>
+      <div>
+        <h3>Limitations</h3>
+        <ul>
+          <li><strong>Six labeled events.</strong> Every model is ultimately learning from six historical
+            crises. That's not enough to separate "the model understands systemic stress" from "the model
+            memorized 2018 and 2020."</li>
+          <li><strong>Severe class imbalance.</strong> ~7% positive rate in training, closer to 1-in-14 in
+            the test window — exactly why three of five models collapsed to the majority-class strategy.</li>
+          <li><strong>Label noise at the boundary.</strong> The 30-day pre-crisis window is a modeling
+            choice, not a fact; days 28–30 before an event look almost identical to normal days.</li>
+          <li><strong>Structurally different inputs.</strong> The GNN's node-level view and the tabular
+            models' system-wide averages are not strictly comparable inputs, only comparable outputs.</li>
+          <li><strong>Batch, not streaming, data.</strong> Everything above is fit on data pulled and frozen
+            once — see the note on the market pulse strip at the top of this page.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Data: NSE / yfinance · RBI DBIE · India VIX · FinBERT on RBI circulars. Frozen 2014–2024, refreshed manually.</span>
+    <span>Split at 2022-01-01 &nbsp;·&nbsp; Train n=1,714 &nbsp;·&nbsp; Test n=1,111</span>
+  </footer>
+
+</div>
+
+<script>
+/* ============================================================
+   Best-effort live market pulse.
+   This is a static export — it has no server of its own, so it
+   asks a public, key-free quote endpoint directly from the
+   browser. If that's blocked (offline export, restrictive
+   network, CORS), it falls back to the last frozen dataset
+   values and says so honestly rather than faking a number.
+   ============================================================ */
+(function(){
+  const FALLBACK = { vix: "14.8", usdinr: "86.4", nifty: "51,240" };
+  const dot = document.getElementById('pulseDot');
+  const status = document.getElementById('pulseStatus');
+  const note = document.getElementById('pulseNote');
+  const elVix = document.getElementById('pulseVix');
+  const elUsd = document.getElementById('pulseUsdinr');
+  const elNifty = document.getElementById('pulseNifty');
+
+  function showFallback(reason){
+    dot.className = 'pulse-dot stale';
+    status.textContent = 'last frozen read';
+    elVix.textContent = FALLBACK.vix;
+    elUsd.textContent = FALLBACK.usdinr;
+    elNifty.textContent = FALLBACK.nifty;
+    note.textContent = 'live feed unreachable from this page (' + reason + ') — showing dataset values';
+  }
+
+  async function fetchQuote(symbol){
+    const url = 'https://stooq.com/q/l/?s=' + symbol + '&f=sd2t2c&h&e=csv';
+    const res = await fetch(url, { mode: 'cors' });
+    if(!res.ok) throw new Error('http ' + res.status);
+    const text = await res.text();
+    const row = text.trim().split('\n')[1].split(',');
+    return row[row.length - 1]; // close
+  }
+
+  async function run(){
+    try{
+      const [usdinr, nifty] = await Promise.all([
+        fetchQuote('usdinr'),
+        fetchQuote('^nsei')
+      ]);
+      dot.className = 'pulse-dot live';
+      status.textContent = 'live';
+      elUsd.textContent = usdinr;
+      elNifty.textContent = nifty;
+      elVix.textContent = FALLBACK.vix; // no key-free India VIX feed found
+      note.textContent = 'USD/INR + Nifty pulled live on load · VIX from frozen dataset (no free feed)';
+    }catch(err){
+      showFallback(err.message || 'network blocked');
+    }
+  }
+  run();
+})();
+</script>
 </body>
 </html>

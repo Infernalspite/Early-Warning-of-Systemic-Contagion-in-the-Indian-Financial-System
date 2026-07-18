@@ -286,9 +286,9 @@ for epoch in range(1, EPOCHS + 1):
                 pred = model(x_i, ei_i, batch_vec)
             else:
                 pred = model(x_i, ei_i)
-            pred = pred.clamp(1e-6, 1-1e-6)
+            pred = pred.clamp(1e-6, 1-1e-6).view(-1)
             w    = pos_weight.item() if y_i.item() == 1 else 1.0
-            loss = w * F.binary_cross_entropy(pred.unsqueeze(0), y_i.unsqueeze(0))
+            loss = w * F.binary_cross_entropy(pred, y_i.view(-1))
             batch_loss = batch_loss + loss
 
         batch_loss = batch_loss / len(batch_idx)

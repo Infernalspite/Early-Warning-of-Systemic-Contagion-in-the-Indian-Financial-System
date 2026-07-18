@@ -389,12 +389,18 @@ covar_252_window = 252
 covar_list  = []
 covar_dates = []
 
+covar_stride = 5  # recompute every 5 trading days, ffill between (QuantReg is expensive)
+
 for i in range(covar_252_window, len(returns)):
     date_i = returns.index[i]
     covar_dates.append(date_i)
 
     if not HAS_SM:
         covar_list.append(np.nan)
+        continue
+
+    if (i - covar_252_window) % covar_stride != 0:
+        covar_list.append(np.nan)  # filled via ffill after the loop
         continue
 
     try:
@@ -425,7 +431,7 @@ for i in range(covar_252_window, len(returns)):
     except Exception:
         covar_list.append(np.nan)
 
-features["covar_system"] = pd.Series(covar_list, index=covar_dates)
+features["covar_system"] = pd.Series(covar_list, index=covar_dates).ffill()
 print(f"  covar_system NaN: {features['covar_system'].isna().sum()}")
 
 # ============================================================
@@ -622,7 +628,7 @@ for i in sampled_idxs:
 
 granger_series_sparse = pd.Series(granger_vals)
 granger_full          = granger_series_sparse.reindex(returns.index)
-granger_full          = granger_full.fillna(method="ffill")
+granger_full          = granger_full.ffill()
 
 features["granger_count"] = granger_full
 print(f"  granger_count NaN (after ffill): "
