@@ -1072,6 +1072,16 @@ async function runLiveScore(manual){
   const explainerEl = document.getElementById('liveExplainer');
   statusEl.textContent = 'refreshing…';
 
+  if(window.location.protocol === 'file:'){
+    document.getElementById('liveScoreNum').textContent = '—';
+    document.getElementById('liveTierTag').textContent = 'Offline · opened as a local file';
+    statusEl.textContent = 'blocked by browser (file://)';
+    explainerEl.innerHTML = `This page is open as a local file (<code style="font-family:var(--mono)">file://…</code>), and browsers block live network requests from local files as a security measure — that's the browser doing that, not this page or the API. It's not fixable by changing anything server-side.`;
+    caveatEl.innerHTML = `<b>To see live data:</b> either deploy this to Vercel (see <code style="font-family:var(--mono)">DEPLOY.md</code>), or for a quick local test run <code style="font-family:var(--mono)">python3 -m http.server 8000</code> in this folder and open <code style="font-family:var(--mono)">http://localhost:8000</code> instead of double-clicking the file — that alone is usually enough to unblock the client-side live score. Everything below this panel (benchmark table, model diagnostics, correlation heatmap) is static/embedded and works either way.`;
+    renderModelPills();
+    return;
+  }
+
   const backend = await tryBackend();
   if(backend && backend.model_scores){
     liveState.tier = 2;
@@ -1106,7 +1116,7 @@ async function runLiveScore(manual){
     document.getElementById('liveScoreNum').textContent = '—';
     document.getElementById('liveTierTag').textContent = 'Offline · no tier reachable';
     statusEl.textContent = 'unreachable';
-    explainerEl.textContent = 'Live feed blocked from this page (network/CORS). Showing the frozen benchmark table below instead.';
+    explainerEl.textContent = `Live feed blocked from this page (${err.message || 'network/CORS'}). Showing the frozen benchmark table below instead.`;
     caveatEl.innerHTML = `<b>No live tier reachable.</b> Both the backend probe and the client-side FX feed failed (${err.message||'network blocked'}). The frozen benchmark results further down are unaffected.`;
     renderModelPills();
   }
