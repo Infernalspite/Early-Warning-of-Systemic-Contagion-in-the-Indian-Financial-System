@@ -1,0 +1,6 @@
+Model,Accuracy,Precision,Recall,F1,ROC_AUC
+Logistic Regression,42.3,0.0392,0.8667,0.075,0.8608
+Random Forest,97.3,0.0,0.0,0.0,0.7888
+XGBoost,97.3,0.0,0.0,0.0,0.8493
+LSTM,97.32,0.0,0.0,0.0,0.8832
+GNN (GraphSAGE),27.61,0.0,0.0,0.0,0.0274
