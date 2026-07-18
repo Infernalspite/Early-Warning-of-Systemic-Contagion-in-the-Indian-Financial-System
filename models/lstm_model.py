@@ -58,7 +58,7 @@ SPLIT_DATE = pd.Timestamp("2022-01-01")
 # 1. Load data
 # ---------------------------------------------------------------------------
 print("Loading data from:", DATA_PATH)
-df = pd.read_csv(DATA_PATH, parse_dates=["date"], index_col="date")
+df = pd.read_csv(DATA_PATH, parse_dates=["Date"], index_col="Date")
 df = df.sort_index()
 
 # ---------------------------------------------------------------------------
