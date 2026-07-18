@@ -1,13 +1,33 @@
 # Live scoring backend (Tier 2) — optional
 
 The dashboard (`web/index.html`) works fully without this. It always
-tries `GET /api/live_score` first; if that 404s (which it will until
-you deploy this), it falls back automatically to a client-side
-partial live score (Tier 1) using the real trained Logistic
-Regression weights and a genuinely live USD/INR read. That fallback
-is disclosed on the page itself — nothing is silently faked.
+tries `GET /api/live_score` first; if that's unreachable (which it
+will be until you deploy this), it falls back automatically to a
+client-side partial live score (Tier 1) using the real trained
+Logistic Regression weights and a genuinely live USD/INR read. That
+fallback is disclosed on the page itself — nothing is silently faked.
 
-This folder is what upgrades that to **real, full backend
+## If you deployed this and only Logistic Regression is scoring
+
+**Check the function's HTTP handler signature first.** Vercel's
+Python runtime requires a class named `handler` inheriting from
+`http.server.BaseHTTPRequestHandler` with a `do_GET` method — not a
+plain `def handler(request): return {...}` function (that's the AWS
+Lambda interface, a different platform). Using the wrong shape is a
+silent failure: Vercel just doesn't invoke the function correctly,
+your fetch to `/api/live_score` fails, and the dashboard permanently
+sits on Tier 1 with no visible error anywhere. This file already
+uses the correct class-based shape — if you're seeing this problem
+on a modified copy, that's the first thing to diff against.
+
+To confirm it's actually deployed and running, open
+`https://your-domain/api/live_score` directly in a browser. You
+should get a JSON body back (even a `{"error": "..."}` body counts —
+that means the function ran, just hit a different problem). A blank
+page or Vercel's own error page means the function isn't deploying
+at all — check the Vercel build log.
+
+This folder is what upgrades the dashboard to **real, full backend
 re-inference across three models, scraped live from Yahoo Finance.**
 
 ## Data source: yfinance, no API key
@@ -70,17 +90,16 @@ a full live recomputation of the whole 39-column pipeline.
 
 ```bash
 python3 -c "
-from api.live_score import handler
+from api.live_score import compute_payload
 import json
-print(json.dumps(handler(None), indent=2)[:2000])
+print(json.dumps(compute_payload(), indent=2)[:2000])
 "
 ```
 
-If Yahoo Finance is unreachable (network, rate limit, or a changed
-endpoint shape), this still returns a 200 with whatever live columns
-it did manage to pull — check `live_feature_keys` in the response to
-see how many actually came through, rather than assuming it's all
-39 or none.
+This calls the actual scoring logic directly, bypassing the HTTP
+layer — useful for confirming the yfinance pull and model scoring
+work before worrying about whether Vercel is routing to the function
+correctly.
 
 ## Cold starts
 
