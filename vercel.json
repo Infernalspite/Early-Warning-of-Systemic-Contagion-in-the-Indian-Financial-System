@@ -2,7 +2,6 @@
   "version": 2,
   "functions": {
     "api/live_score.py": {
-      "runtime": "@vercel/python",
       "includeFiles": "models/**,data/processed/**",
       "maxDuration": 30
     }
