@@ -2,7 +2,9 @@
 
 An end-to-end **Machine Learning powered Early Warning System** for detecting and visualising systemic contagion risk across the Indian banking sector.
 
-[![Live Dashboard](https://img.shields.io/badge/Live%20Dashboard-GitHub%20Pages-blue?style=for-the-badge&logo=github)](https://justSwa.github.io/Early-Warning-of-Systemic-Contagion-in-the-Indian-Financial-System)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Infernalspite/Early-Warning-of-Systemic-Contagion-in-the-Indian-Financial-System)
+
+> **Full-stack deployment** — Flask serves both the interactive dashboard and live ML inference (`/api/live_score`) from one Render Web Service. All models (Logistic Regression, Random Forest, XGBoost, LSTM, GNN) are included with live data from Yahoo Finance.
 
 ---
 
