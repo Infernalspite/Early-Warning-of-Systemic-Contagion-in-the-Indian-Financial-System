@@ -727,10 +727,6 @@ footer a{ text-decoration:underline; text-decoration-color: var(--line-heavy); }
 </script>
 
 <script>
-// If deploying the Python backend on Render, set your Render Web Service URL here.
-// The frontend will try the relative Vercel path first, then fallback to this URL.
-const BACKEND_API_FALLBACK = 'https://early-warning-systemic-contagion.onrender.com';
-
 const DATA = JSON.parse(document.getElementById('dashboardData').textContent);
 
 const MODEL_COLORS = {
@@ -1045,34 +1041,17 @@ function renderSnapshot(row, liveKeys){
 }
 
 async function tryBackend(){
-  const endpoints = [
-    '/api/live_score',
-    (typeof BACKEND_API_FALLBACK !== 'undefined' && BACKEND_API_FALLBACK) ? BACKEND_API_FALLBACK.replace(/\/$/, '') + '/api/live_score' : null
-  ].filter(Boolean);
-
-  let lastError = 'no endpoints configured';
-  for (const url of endpoints) {
-    try {
-      // Use no-cache so every page load fetches fresh data.
-      // Timeout 7s to survive cold starts on free hosting tiers.
-      const res = await fetch(url, {
-        signal: AbortSignal.timeout(7000),
-        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.error) {
-          lastError = 'backend error: ' + data.error;
-          continue;
-        }
-        return { ok: true, data };
-      }
-      lastError = 'HTTP ' + res.status;
-    } catch (e) {
-      lastError = e.message || 'request failed';
-    }
-  }
-  return { ok: false, reason: lastError };
+  try{
+    // no-cache ensures every reload gets a fresh score, never a cached response
+    const res = await fetch('/api/live_score', {
+      signal: AbortSignal.timeout(60000),
+      headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+    });
+    if(!res.ok) return { ok:false, reason: 'backend HTTP ' + res.status };
+    const data = await res.json();
+    if(data.error) return { ok:false, reason: 'backend error: ' + data.error };
+    return { ok:true, data };
+  }catch(e){ return { ok:false, reason: e.message || 'request failed' }; }
 }
 
 async function getLiveUsdInr(){

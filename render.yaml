@@ -3,9 +3,11 @@ services:
     name: early-warning-systemic-contagion
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python api/live_score.py
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1
+    healthCheckPath: /health
+    autoDeploy: true
     envVars:
       - key: YF_CACHE_DIR
         value: /tmp/yfinance_cache
-    healthCheckPath: /api/live_score
-    autoDeploy: true
+      - key: PYTHON_VERSION
+        value: 3.12.0
