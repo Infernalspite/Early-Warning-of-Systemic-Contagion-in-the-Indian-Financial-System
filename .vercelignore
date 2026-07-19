@@ -1,6 +1,6 @@
-api/
 web/index_old_glassmorphism_backup.html
 outputs/
-api/__pycache__/
 **/__pycache__/
 *.pyc
+.git/
+node_modules/
