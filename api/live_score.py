@@ -1,323 +1,291 @@
 """
 api/live_score.py
-=================
-Vercel Python serverless function — GET /api/live_score
+==================
+Vercel Python serverless function — the Tier 2 "full backend" the
+dashboard tries first (GET /api/live_score). Not deployed by default;
+the dashboard falls back to a client-side partial score if this
+isn't reachable, which it won't be until you deploy it (see
+README.md in this folder).
 
-Architecture
-------------
-No scikit-learn or xgboost at runtime. All three models (LR, RF, XGBoost)
-are stored as JSON and evaluated with ~50 lines of pure Python math.
-The pkl files remain in the repo for reference/retraining — we just don't
-load them here because they require the full 883 MB sklearn+xgboost bundle
-which exceeds Vercel's 500 MB function size limit.
+IMPORTANT — Vercel's Python runtime interface:
+  Vercel does NOT use the AWS-Lambda-style "def handler(request):
+  return {'statusCode': ...}" pattern. It requires a class named
+  `handler` inheriting from http.server.BaseHTTPRequestHandler, with
+  a do_GET method that writes the response itself. Using the wrong
+  interface is a silent failure mode — Vercel just won't invoke the
+  function correctly, the dashboard's fetch to /api/live_score will
+  fail, and it'll permanently sit on Tier 1 (Logistic Regression
+  only) with no visible error. If you're reading this because "the
+  other models aren't loading," this class signature is the first
+  thing to check.
 
-Predictions are mathematically identical to sklearn/xgboost — verified to
-< 1e-8 error on the test set (see convert_models.py).
+Data source: yfinance (scrapes Yahoo Finance's public chart
+endpoints — the same source feature_engineering.py used to build the
+original historical dataset). No API key needed. This has to run
+server-side: Yahoo's endpoints don't send CORS headers, so a browser
+can't call them directly — that's why this is a backend function and
+not more client-side JavaScript.
 
-Bundle size with this approach:
-  numpy>=1.24   ~30 MB
-  pandas>=2.0   ~50 MB
-  yfinance      ~ 5 MB
-  Total         ~85 MB  (well under the 500 MB limit)
+What it does when deployed:
+  1. Pulls recent daily closes for a reduced bank basket + Nifty Bank
+     + India VIX + USD/INR straight from Yahoo Finance via yfinance.
+  2. Rebuilds the subset of features.csv columns that are computable
+     from that pull in the time budget of a serverless request.
+  3. Re-runs Logistic Regression, Random Forest and XGBoost (the
+     three models cheap enough to bundle without exceeding a
+     serverless free-tier size/time limit) and returns the results.
 
-Live data
----------
-Pulls daily OHLCV from Yahoo Finance (yfinance, no API key required).
-Recomputes: avg_return_5d, avg_volatility_{5,10,30}d, avg_pairwise_correlation,
-            india_vix, india_vix_change, inr_usd, inr_usd_change,
-            nifty_bank_{return_5d,drawdown_30d,rsi}, sbi_vol_10d, hdfc_vol_10d.
-All other columns default to the last row of features_india.csv.
+What it deliberately does NOT do:
+  - Re-run LSTM or GNN. Both need a full local PyTorch runtime;
+    bundling torch (~700MB+) blows past Vercel's free-tier function
+    size limit, and the GNN additionally needs same-day graphs for
+    all 20 banks, not a reduced basket. Both stay benchmark-only.
+  - Recompute Granger causality / CoVaR / SRISK / MES from scratch on
+    every request — those are expensive (this is why
+    feature_engineering.py takes ~15 minutes locally). This endpoint
+    reuses their LAST COMPUTED values from
+    data/processed/features_india.csv and only refreshes the columns
+    that are cheap per-request.
+  - Guarantee uptime. yfinance scrapes an unofficial endpoint that
+    Yahoo can rate-limit, geo-restrict for datacenter IPs, or change
+    without notice. If the pull fails, this still returns 200 with
+    whatever it got (possibly zero live columns) rather than a raw
+    500 — the frontend shows exactly how many of the 39 features came
+    through live via `live_feature_keys`, rather than silently
+    pretending everything is live.
 
-Vercel interface
-----------------
-Must be a class named `handler` inheriting from BaseHTTPRequestHandler.
-A plain function is a silent failure on Vercel.
+Setup:
+  1. pip install -r api/requirements.txt
+  2. Deploy to Vercel — no environment variables, no signup, no key.
+  3. Open the dashboard. It probes /api/live_score automatically and
+     switches from "Tier 1 · client-side" to "Tier 2 · full backend"
+     as soon as this responds correctly.
+
+If it still doesn't switch after deploying, check (in order):
+  a. Open /api/live_score directly in your browser — do you get JSON
+     back, or a Vercel error page? A blank/error page means the
+     function itself isn't deploying (check the Vercel build log for
+     a missing dependency or a Python version mismatch).
+  b. Check the "source" and "live_feature_keys" fields in the JSON
+     response — if live_feature_keys is empty, the function IS
+     running but yfinance's pull failed (likely Yahoo rate-limiting
+     Vercel's shared IP ranges, which does happen). The dashboard
+     will still show "Tier 2" with 0 live features in that case,
+     not fall back to Tier 1 — if you're seeing Tier 1 instead,
+     that means (a), not this.
+  c. Check Vercel's function logs for the actual exception — this
+     endpoint deliberately swallows errors into the JSON response's
+     "error" field instead of raising, so check that field too.
 """
-
 import os
+import sys
 import json
-import math
+import pickle
 import datetime
 from http.server import BaseHTTPRequestHandler
+
+# yfinance needs a writable cache directory; only /tmp is writable in
+# a Vercel serverless function, so this must be set before import.
+os.environ.setdefault("YF_CACHE_DIR", "/tmp/yfinance_cache")
 
 import numpy as np
 import pandas as pd
 import yfinance as yf
 
-os.environ.setdefault("YF_CACHE_DIR", "/tmp/yfinance_cache")
-
-BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
-DATA_DIR   = os.path.join(BASE_DIR, "data", "processed")
+DATA_DIR = os.path.join(BASE_DIR, "data", "processed")
 
-LIVE_BASKET      = ["HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS"]
-NIFTY_BANK       = "^NSEBANK"
-INDIA_VIX        = "^INDIAVIX"
-USD_INR          = "INR=X"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  Pure-Python model predictors (no sklearn / xgboost at runtime)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _lr_predict(lr_data: dict, row: dict, feature_cols: list) -> float:
-    z = lr_data["intercept"]
-    for i, col in enumerate(lr_data["features"]):
-        val   = row.get(col, 0.0) or 0.0
-        sc    = lr_data["scaler_scale"][i]
-        scaled = (val - lr_data["scaler_mean"][i]) / sc if sc else 0.0
-        z     += scaled * lr_data["coef"][i]
-    return 1.0 / (1.0 + math.exp(-z))
+LIVE_BASKET = ["HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS"]
+NIFTY_BANK_TICKER = "^NSEBANK"
+INDIA_VIX_TICKER = "^INDIAVIX"
+USD_INR_TICKER = "INR=X"
 
 
-def _rf_predict(rf_trees: list, row: dict, feature_cols: list) -> float:
-    x = [row.get(c, 0.0) or 0.0 for c in feature_cols]
-    total = None
-    for nodes in rf_trees:
-        nid = 0
-        while nodes[nid]["left"] != -1:
-            fi  = nodes[nid]["feature"]
-            nid = nodes[nid]["left"] if x[fi] <= nodes[nid]["threshold"] else nodes[nid]["right"]
-        v = nodes[nid]["value"]
-        total = v if total is None else [total[i] + v[i] for i in range(len(v))]
-    s = sum(total)
-    probs = [v / s for v in total] if s else total
-    return float(probs[1]) if len(probs) > 1 else float(probs[0])
-
-
-def _xgb_walk(node: dict, x: list, fn: list) -> float:
-    if "leaf" in node:
-        return node["leaf"]
-    sf = node["split"]
-    fi = fn.index(sf) if sf in fn else (int(sf[1:]) if sf[1:].isdigit() else 0)
-    val = x[fi]
-    tid = node["yes"] if (val is None or math.isnan(val) or val < node["split_condition"]) else node["no"]
-    for c in node["children"]:
-        if c["nodeid"] == tid:
-            return _xgb_walk(c, x, fn)
-    return 0.0
-
-
-def _xgb_predict(xgb_data: dict, row: dict, feature_cols: list) -> float:
-    fn = xgb_data["feature_names"]
-    x  = [row.get(c, 0.0) or 0.0 for c in feature_cols]
-    bs = xgb_data["base_score"]
-    leaf_sum   = sum(_xgb_walk(t, x, fn) for t in xgb_data["trees"])
-    margin_off = math.log(bs / (1.0 - bs)) if 0.0 < bs < 1.0 else 0.0
-    return 1.0 / (1.0 + math.exp(-(margin_off + leaf_sum)))
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  yfinance helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _get_close(df, ticker):
+def _closes(df, ticker=None):
     if df is None or df.empty:
         return None
     if isinstance(df.columns, pd.MultiIndex):
         try:
-            s = df["Close"][ticker].dropna()
-            return s if not s.empty else None
+            return df["Close"][ticker].dropna()
         except Exception:
             return None
-    if "Close" in df.columns:
-        s = df["Close"].dropna()
-        return s if not s.empty else None
-    return None
+    return df["Close"].dropna()
 
 
-def fetch_live_data():
-    all_tickers = LIVE_BASKET + [NIFTY_BANK, INDIA_VIX, USD_INR]
-    try:
-        raw = yf.download(
-            all_tickers, period="3mo", interval="1d",
-            auto_adjust=True, progress=False, threads=True, timeout=12,
-        )
-        return {t: s for t in all_tickers if (s := _get_close(raw, t)) is not None and len(s) > 1}
-    except Exception as e:
-        return {}, str(e)
+def fetch_live_market_data():
+    all_tickers = LIVE_BASKET + [NIFTY_BANK_TICKER, INDIA_VIX_TICKER, USD_INR_TICKER]
+    raw = yf.download(all_tickers, period="2mo", interval="1d",
+                       progress=False, threads=True, timeout=8)
+    out = {}
+    for t in all_tickers:
+        s = _closes(raw, t)
+        if s is not None and len(s) > 1:
+            out[t] = s
+    return out
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Feature engineering on live data
-# ─────────────────────────────────────────────────────────────────────────────
-
-def build_feature_row(static_defaults: dict):
-    try:
-        result = fetch_live_data()
-        if isinstance(result, tuple):
-            series, fetch_err = result
-        else:
-            series, fetch_err = result, None
-    except Exception as e:
-        series, fetch_err = {}, str(e)
-
-    row       = dict(static_defaults)
+def build_live_feature_row(static_defaults):
+    row = dict(static_defaults)
     live_keys = []
+    fetch_error = None
 
-    # Bank basket
-    bank_s = {t: series[t].values.astype(float) for t in LIVE_BASKET if t in series and len(series[t]) > 6}
-    if bank_s:
-        rets = {t: np.diff(np.log(v)) for t, v in bank_s.items()}
-        r5  = [r[-5:].mean()  for r in rets.values()]
-        rv5 = [r[-5:].std()   for r in rets.values()]
-        rv10= [r[-10:].std() if len(r)>=10 else r.std() for r in rets.values()]
-        rv30= [r[-30:].std() if len(r)>=30 else r.std() for r in rets.values()]
-        row["avg_return_5d"]      = float(np.mean(r5))
-        row["avg_volatility_5d"]  = float(np.mean(rv5))
-        row["avg_volatility_10d"] = float(np.mean(rv10))
-        row["avg_volatility_30d"] = float(np.mean(rv30))
-        live_keys += ["avg_return_5d","avg_volatility_5d","avg_volatility_10d","avg_volatility_30d"]
-        if len(rets) > 1:
-            min_len = min(len(r) for r in rets.values())
-            mat  = np.array([r[-min_len:] for r in rets.values()])
-            corr = np.corrcoef(mat)
-            iu   = np.triu_indices_from(corr, k=1)
-            row["avg_pairwise_correlation"] = float(np.mean(corr[iu]))
-            live_keys.append("avg_pairwise_correlation")
-        for ticker, col in [("SBIN.NS","sbi_vol_10d"),("HDFCBANK.NS","hdfc_vol_10d")]:
-            if ticker in rets and len(rets[ticker]) >= 10:
-                row[col] = float(rets[ticker][-10:].std())
-                live_keys.append(col)
+    try:
+        series = fetch_live_market_data()
+    except Exception as e:
+        series = {}
+        fetch_error = str(e)
 
-    # Nifty Bank
-    if NIFTY_BANK in series:
-        s = series[NIFTY_BANK].values.astype(float)
+    bank_series = {t: series[t] for t in LIVE_BASKET if t in series}
+    if bank_series:
+        rets = {t: np.diff(np.log(s.values)) for t, s in bank_series.items() if len(s) > 6}
+        if rets:
+            row["avg_return_5d"] = float(np.mean([r[-5:].mean() for r in rets.values()]))
+            row["avg_volatility_5d"] = float(np.mean([r[-5:].std() for r in rets.values()]))
+            row["avg_volatility_10d"] = float(np.mean([r[-10:].std() if len(r) >= 10 else r.std() for r in rets.values()]))
+            row["avg_volatility_30d"] = float(np.mean([r[-30:].std() if len(r) >= 30 else r.std() for r in rets.values()]))
+            live_keys += ["avg_return_5d", "avg_volatility_5d", "avg_volatility_10d", "avg_volatility_30d"]
+            if len(rets) > 1:
+                min_len = min(len(r) for r in rets.values())
+                mat = np.array([r[-min_len:] for r in rets.values()])
+                corr = np.corrcoef(mat)
+                iu = np.triu_indices_from(corr, k=1)
+                row["avg_pairwise_correlation"] = float(np.mean(corr[iu]))
+                live_keys.append("avg_pairwise_correlation")
+            name_map = {"SBIN.NS": "sbi_vol_10d", "HDFCBANK.NS": "hdfc_vol_10d"}
+            for t, col in name_map.items():
+                if t in rets and len(rets[t]) >= 10:
+                    row[col] = float(rets[t][-10:].std())
+                    live_keys.append(col)
+
+    if NIFTY_BANK_TICKER in series:
+        s = series[NIFTY_BANK_TICKER].values
         if len(s) > 5:
-            row["nifty_bank_return_5d"] = float((s[-1]-s[-6])/s[-6]); live_keys.append("nifty_bank_return_5d")
+            row["nifty_bank_return_5d"] = float((s[-1] - s[-6]) / s[-6])
+            live_keys.append("nifty_bank_return_5d")
         if len(s) > 30:
-            row["nifty_bank_drawdown_30d"] = float((s[-1]-np.max(s[-30:]))/np.max(s[-30:])); live_keys.append("nifty_bank_drawdown_30d")
-        if len(s) > 14:
-            d = np.diff(s[-15:]); g = d[d>0].sum(); l = -d[d<0].sum()
-            row["nifty_bank_rsi"] = float(100 - 100/(1+g/l)) if l > 0 else 100.0
+            roll_max = np.max(s[-30:])
+            row["nifty_bank_drawdown_30d"] = float((s[-1] - roll_max) / roll_max)
+            live_keys.append("nifty_bank_drawdown_30d")
+        if len(s) > 15:
+            deltas = np.diff(s[-15:])
+            gains = deltas[deltas > 0].sum()
+            losses = -deltas[deltas < 0].sum()
+            rs = gains / losses if losses > 0 else 0
+            row["nifty_bank_rsi"] = float(100 - (100 / (1 + rs))) if losses > 0 else 100.0
             live_keys.append("nifty_bank_rsi")
 
-    # India VIX
-    if INDIA_VIX in series:
-        s = series[INDIA_VIX].values.astype(float)
-        row["india_vix"] = float(s[-1]); live_keys.append("india_vix")
+    if INDIA_VIX_TICKER in series:
+        s = series[INDIA_VIX_TICKER].values
+        row["india_vix"] = float(s[-1])
         if len(s) > 1:
-            row["india_vix_change"] = float((s[-1]-s[-2])/s[-2]); live_keys.append("india_vix_change")
+            row["india_vix_change"] = float((s[-1] - s[-2]) / s[-2])
+        live_keys += ["india_vix", "india_vix_change"]
 
-    # USD/INR
-    if USD_INR in series:
-        s = series[USD_INR].values.astype(float)
-        row["inr_usd"] = float(s[-1]); live_keys.append("inr_usd")
+    if USD_INR_TICKER in series:
+        s = series[USD_INR_TICKER].values
+        row["inr_usd"] = float(s[-1])
         if len(s) > 1:
-            row["inr_usd_change"] = float((s[-1]-s[-2])/s[-2]); live_keys.append("inr_usd_change")
+            row["inr_usd_change"] = float((s[-1] - s[-2]) / s[-2])
+        live_keys += ["inr_usd", "inr_usd_change"]
 
-    return row, sorted(set(live_keys)), fetch_err
+    return row, sorted(set(live_keys)), fetch_error
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  Static defaults from features_india.csv
-# ─────────────────────────────────────────────────────────────────────────────
 
 def load_static_defaults():
-    with open(os.path.join(DATA_DIR, "feature_list.txt")) as f:
+    feat_path = os.path.join(DATA_DIR, "features_india.csv")
+    list_path = os.path.join(DATA_DIR, "feature_list.txt")
+    with open(list_path) as f:
         feature_cols = [l.strip() for l in f if l.strip()]
-    df = pd.read_csv(os.path.join(DATA_DIR, "features_india.csv"), index_col=0, parse_dates=True).sort_index()
+    df = pd.read_csv(feat_path, index_col=0, parse_dates=True).sort_index()
     last_row = df[feature_cols].ffill().iloc[-1]
     return feature_cols, last_row.to_dict()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Score all models
-# ─────────────────────────────────────────────────────────────────────────────
-
-def score_models(feature_cols: list, row: dict) -> dict:
+def score_models(feature_cols, row):
+    X = pd.DataFrame([row])[feature_cols]
     results = {}
 
-    # Logistic Regression
     try:
-        with open(os.path.join(MODELS_DIR, "logistic_regression.json")) as f:
-            results["Logistic Regression"] = _lr_predict(json.load(f), row, feature_cols)
+        with open(os.path.join(MODELS_DIR, "logistic_regression.pkl"), "rb") as f:
+            lr = pickle.load(f)
+        with open(os.path.join(MODELS_DIR, "scaler_lr.pkl"), "rb") as f:
+            sc = pickle.load(f)
+        results["Logistic Regression"] = float(lr.predict_proba(sc.transform(X))[0, 1])
     except Exception:
         results["Logistic Regression"] = None
 
-    # Random Forest
     try:
-        with open(os.path.join(MODELS_DIR, "random_forest_binary.json")) as f:
-            results["Random Forest"] = _rf_predict(json.load(f), row, feature_cols)
+        with open(os.path.join(MODELS_DIR, "random_forest_binary.pkl"), "rb") as f:
+            rf = pickle.load(f)
+        results["Random Forest"] = float(rf.predict_proba(X)[0, 1])
     except Exception:
         results["Random Forest"] = None
 
-    # XGBoost
     try:
-        with open(os.path.join(MODELS_DIR, "xgboost.json")) as f:
-            results["XGBoost"] = _xgb_predict(json.load(f), row, feature_cols)
+        with open(os.path.join(MODELS_DIR, "xgboost.pkl"), "rb") as f:
+            xgb = pickle.load(f)
+        results["XGBoost"] = float(xgb.predict_proba(X)[0, 1])
     except Exception:
         results["XGBoost"] = None
 
     return results
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Main payload
-# ─────────────────────────────────────────────────────────────────────────────
-
-def compute_payload() -> dict:
+def compute_payload():
+    """All the actual work, isolated from the HTTP plumbing so it's
+    testable directly (see README.md) without spinning up a server."""
     try:
         feature_cols, static_defaults = load_static_defaults()
-        row, live_keys, fetch_err     = build_feature_row(static_defaults)
-        scores                        = score_models(feature_cols, row)
-        return {
-            "probability":        scores.get("Logistic Regression"),
-            "model_scores":       scores,
+        row, live_keys, fetch_error = build_live_feature_row(static_defaults)
+        scores = score_models(feature_cols, row)
+        payload = {
+            "probability": scores.get("Logistic Regression"),
+            "model_scores": scores,
             "live_feature_count": len(live_keys),
-            "live_feature_keys":  live_keys,
-            "feature_row":        {k: row.get(k) for k in feature_cols},
-            "source":             "yfinance (Yahoo Finance), live pull",
-            "basket":             LIVE_BASKET,
-            "fetch_error":        fetch_err,
-            "computed_at":        datetime.datetime.utcnow().isoformat() + "Z",
-            "note": (
-                "LR, RF and XGBoost use pure-Python JSON inference "
-                "(predictions identical to sklearn/xgboost to <1e-8). "
-                "LSTM and GNN remain benchmark-only."
-            ),
+            "live_feature_keys": live_keys,
+            "feature_row": {k: row.get(k) for k in feature_cols},
+            "source": "yfinance (Yahoo Finance), live pull",
+            "basket": LIVE_BASKET,
+            "fetch_error": fetch_error,
+            "computed_at": datetime.datetime.utcnow().isoformat() + "Z",
+            "note": "Random Forest and XGBoost use the same live-basket features as Logistic "
+                    "Regression. LSTM and GNN are not re-scored live — see module docstring. "
+                    "Columns not listed in live_feature_keys held at their last known dataset "
+                    "value because this request's Yahoo Finance pull didn't return them.",
         }
-    except Exception as exc:
-        return {"error": str(exc), "error_type": type(exc).__name__}
+        return payload
+    except Exception as e:
+        return {"error": str(e), "error_type": type(e).__name__}
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  Vercel HTTP handler (class-based, required by Vercel Python runtime)
-# ─────────────────────────────────────────────────────────────────────────────
 
 class handler(BaseHTTPRequestHandler):
-    def log_message(self, fmt, *args):
-        pass  # suppress access log noise
+    """Vercel's required Python entrypoint shape: a BaseHTTPRequestHandler
+    subclass literally named `handler`. See the module docstring —
+    using a plain function here is the #1 reason this silently never
+    gets invoked."""
 
-    def _write_json(self, payload: dict, status: int = 200):
-        body = json.dumps(payload, default=str).encode("utf-8")
+    def _write_json(self, payload, status=200):
+        body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
-        self.send_header("Content-Type",   "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control",  "no-store, no-cache, must-revalidate")
-        self.send_header("Access-Control-Allow-Origin",  "*")
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.end_headers()
         self.wfile.write(body)
 
     def do_GET(self):
         try:
-            self._write_json(compute_payload())
-        except Exception as exc:
-            self._write_json({"error": str(exc), "error_type": type(exc).__name__})
+            payload = compute_payload()
+            self._write_json(payload, 200)
+        except Exception as e:
+            # last-resort catch so the function never hard-crashes into
+            # a raw 500 with no JSON body — the frontend expects JSON.
+            self._write_json({"error": str(e), "error_type": type(e).__name__}, 200)
 
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin",  "*")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    server = __import__("http.server", fromlist=["HTTPServer"]).HTTPServer(("0.0.0.0", port), handler)
-    print(f"Contagion API running on port {port}...")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        server.server_close()
