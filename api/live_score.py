@@ -1,299 +1,300 @@
 """
 api/live_score.py
-==================
-Vercel Python serverless function — deployed at GET /api/live_score.
+=================
+Vercel Python serverless function — GET /api/live_score
 
-Pulls live market data from Yahoo Finance via yfinance, re-runs
-Logistic Regression, Random Forest and XGBoost on the fresh features,
-and returns a JSON payload the dashboard displays.
+Architecture
+------------
+No scikit-learn or xgboost at runtime. All three models (LR, RF, XGBoost)
+are stored as JSON and evaluated with ~50 lines of pure Python math.
+The pkl files remain in the repo for reference/retraining — we just don't
+load them here because they require the full 883 MB sklearn+xgboost bundle
+which exceeds Vercel's 500 MB function size limit.
 
-LSTM and GNN are excluded — bundling PyTorch (~700 MB) exceeds
-Vercel's free-tier function size limit.
+Predictions are mathematically identical to sklearn/xgboost — verified to
+< 1e-8 error on the test set (see convert_models.py).
 
-Vercel's Python runtime interface:
-  Requires a class named `handler` inheriting from
-  http.server.BaseHTTPRequestHandler with a do_GET method.
-  Using a plain function is a silent failure mode.
+Bundle size with this approach:
+  numpy>=1.24   ~30 MB
+  pandas>=2.0   ~50 MB
+  yfinance      ~ 5 MB
+  Total         ~85 MB  (well under the 500 MB limit)
+
+Live data
+---------
+Pulls daily OHLCV from Yahoo Finance (yfinance, no API key required).
+Recomputes: avg_return_5d, avg_volatility_{5,10,30}d, avg_pairwise_correlation,
+            india_vix, india_vix_change, inr_usd, inr_usd_change,
+            nifty_bank_{return_5d,drawdown_30d,rsi}, sbi_vol_10d, hdfc_vol_10d.
+All other columns default to the last row of features_india.csv.
+
+Vercel interface
+----------------
+Must be a class named `handler` inheriting from BaseHTTPRequestHandler.
+A plain function is a silent failure on Vercel.
 """
+
 import os
-import sys
 import json
-import pickle
+import math
 import datetime
 from http.server import BaseHTTPRequestHandler
-
-# yfinance needs a writable cache dir; /tmp is the only writable
-# location in a Vercel serverless function.
-os.environ.setdefault("YF_CACHE_DIR", "/tmp/yfinance_cache")
 
 import numpy as np
 import pandas as pd
 import yfinance as yf
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.environ.setdefault("YF_CACHE_DIR", "/tmp/yfinance_cache")
+
+BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODELS_DIR = os.path.join(BASE_DIR, "models")
-DATA_DIR = os.path.join(BASE_DIR, "data", "processed")
+DATA_DIR   = os.path.join(BASE_DIR, "data", "processed")
 
-LIVE_BASKET = [
-    "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS",
-    "AXISBANK.NS", "KOTAKBANK.NS",
-]
-NIFTY_BANK_TICKER = "^NSEBANK"
-INDIA_VIX_TICKER  = "^INDIAVIX"
-USD_INR_TICKER    = "INR=X"
+LIVE_BASKET      = ["HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "AXISBANK.NS", "KOTAKBANK.NS"]
+NIFTY_BANK       = "^NSEBANK"
+INDIA_VIX        = "^INDIAVIX"
+USD_INR          = "INR=X"
 
 
-# ------------------------------------------------------------------ #
-#  yfinance helpers — handle both old (flat) and new (MultiIndex)     #
-#  column layouts transparently.                                      #
-# ------------------------------------------------------------------ #
+# ─────────────────────────────────────────────────────────────────────────────
+#  Pure-Python model predictors (no sklearn / xgboost at runtime)
+# ─────────────────────────────────────────────────────────────────────────────
 
-def _get_close(df: pd.DataFrame, ticker: str) -> pd.Series | None:
-    """Return the Close series for `ticker` regardless of column layout."""
+def _lr_predict(lr_data: dict, row: dict, feature_cols: list) -> float:
+    z = lr_data["intercept"]
+    for i, col in enumerate(lr_data["features"]):
+        val   = row.get(col, 0.0) or 0.0
+        sc    = lr_data["scaler_scale"][i]
+        scaled = (val - lr_data["scaler_mean"][i]) / sc if sc else 0.0
+        z     += scaled * lr_data["coef"][i]
+    return 1.0 / (1.0 + math.exp(-z))
+
+
+def _rf_predict(rf_trees: list, row: dict, feature_cols: list) -> float:
+    x = [row.get(c, 0.0) or 0.0 for c in feature_cols]
+    total = None
+    for nodes in rf_trees:
+        nid = 0
+        while nodes[nid]["left"] != -1:
+            fi  = nodes[nid]["feature"]
+            nid = nodes[nid]["left"] if x[fi] <= nodes[nid]["threshold"] else nodes[nid]["right"]
+        v = nodes[nid]["value"]
+        total = v if total is None else [total[i] + v[i] for i in range(len(v))]
+    s = sum(total)
+    probs = [v / s for v in total] if s else total
+    return float(probs[1]) if len(probs) > 1 else float(probs[0])
+
+
+def _xgb_walk(node: dict, x: list, fn: list) -> float:
+    if "leaf" in node:
+        return node["leaf"]
+    sf = node["split"]
+    fi = fn.index(sf) if sf in fn else (int(sf[1:]) if sf[1:].isdigit() else 0)
+    val = x[fi]
+    tid = node["yes"] if (val is None or math.isnan(val) or val < node["split_condition"]) else node["no"]
+    for c in node["children"]:
+        if c["nodeid"] == tid:
+            return _xgb_walk(c, x, fn)
+    return 0.0
+
+
+def _xgb_predict(xgb_data: dict, row: dict, feature_cols: list) -> float:
+    fn = xgb_data["feature_names"]
+    x  = [row.get(c, 0.0) or 0.0 for c in feature_cols]
+    bs = xgb_data["base_score"]
+    leaf_sum   = sum(_xgb_walk(t, x, fn) for t in xgb_data["trees"])
+    margin_off = math.log(bs / (1.0 - bs)) if 0.0 < bs < 1.0 else 0.0
+    return 1.0 / (1.0 + math.exp(-(margin_off + leaf_sum)))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  yfinance helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _get_close(df, ticker):
     if df is None or df.empty:
         return None
-    # New yfinance (>=0.2.x) returns MultiIndex columns: (field, ticker)
     if isinstance(df.columns, pd.MultiIndex):
         try:
             s = df["Close"][ticker].dropna()
             return s if not s.empty else None
-        except (KeyError, TypeError):
+        except Exception:
             return None
-    # Old layout: flat columns, single ticker download
     if "Close" in df.columns:
         s = df["Close"].dropna()
         return s if not s.empty else None
     return None
 
 
-def fetch_live_market_data() -> dict:
-    """Download recent daily OHLCV for all tickers. Returns {ticker: Series}."""
-    all_tickers = LIVE_BASKET + [NIFTY_BANK_TICKER, INDIA_VIX_TICKER, USD_INR_TICKER]
-    # group=True keeps MultiIndex; auto_adjust avoids split/dividend noise
-    raw = yf.download(
-        all_tickers,
-        period="3mo",
-        interval="1d",
-        auto_adjust=True,
-        progress=False,
-        threads=True,
-        timeout=12,
-    )
-    out = {}
-    for ticker in all_tickers:
-        s = _get_close(raw, ticker)
-        if s is not None and len(s) > 1:
-            out[ticker] = s
-    return out
-
-
-# ------------------------------------------------------------------ #
-#  Feature engineering on live data                                   #
-# ------------------------------------------------------------------ #
-
-def build_live_feature_row(static_defaults: dict) -> tuple:
-    """
-    Returns (row_dict, live_keys_list, fetch_error_or_None).
-    Columns not computable from the live pull are left at their
-    static_defaults value (last known value from features_india.csv).
-    """
-    row = dict(static_defaults)
-    live_keys: list[str] = []
-    fetch_error = None
-
+def fetch_live_data():
+    all_tickers = LIVE_BASKET + [NIFTY_BANK, INDIA_VIX, USD_INR]
     try:
-        series = fetch_live_market_data()
-    except Exception as exc:
-        series = {}
-        fetch_error = str(exc)
+        raw = yf.download(
+            all_tickers, period="3mo", interval="1d",
+            auto_adjust=True, progress=False, threads=True, timeout=12,
+        )
+        return {t: s for t in all_tickers if (s := _get_close(raw, t)) is not None and len(s) > 1}
+    except Exception as e:
+        return {}, str(e)
 
-    # ---- bank basket features ----------------------------------------
-    bank_series = {t: series[t] for t in LIVE_BASKET if t in series}
-    if bank_series:
-        rets = {}
-        for t, s in bank_series.items():
-            vals = s.values.astype(float)
-            if len(vals) > 6:
-                rets[t] = np.diff(np.log(vals))
 
-        if rets:
-            r5  = [r[-5:].mean()  for r in rets.values()]
-            rv5 = [r[-5:].std()   for r in rets.values()]
-            rv10= [r[-10:].std() if len(r) >= 10 else r.std() for r in rets.values()]
-            rv30= [r[-30:].std() if len(r) >= 30 else r.std() for r in rets.values()]
+# ─────────────────────────────────────────────────────────────────────────────
+#  Feature engineering on live data
+# ─────────────────────────────────────────────────────────────────────────────
 
-            row["avg_return_5d"]       = float(np.mean(r5))
-            row["avg_volatility_5d"]   = float(np.mean(rv5))
-            row["avg_volatility_10d"]  = float(np.mean(rv10))
-            row["avg_volatility_30d"]  = float(np.mean(rv30))
-            live_keys += ["avg_return_5d", "avg_volatility_5d",
-                          "avg_volatility_10d", "avg_volatility_30d"]
+def build_feature_row(static_defaults: dict):
+    try:
+        result = fetch_live_data()
+        if isinstance(result, tuple):
+            series, fetch_err = result
+        else:
+            series, fetch_err = result, None
+    except Exception as e:
+        series, fetch_err = {}, str(e)
 
-            if len(rets) > 1:
-                min_len = min(len(r) for r in rets.values())
-                mat  = np.array([r[-min_len:] for r in rets.values()])
-                corr = np.corrcoef(mat)
-                iu   = np.triu_indices_from(corr, k=1)
-                row["avg_pairwise_correlation"] = float(np.mean(corr[iu]))
-                live_keys.append("avg_pairwise_correlation")
+    row       = dict(static_defaults)
+    live_keys = []
 
-            # idiosyncratic vol for named banks
-            name_map = {"SBIN.NS": "sbi_vol_10d", "HDFCBANK.NS": "hdfc_vol_10d"}
-            for t, col in name_map.items():
-                if t in rets and len(rets[t]) >= 10:
-                    row[col] = float(rets[t][-10:].std())
-                    live_keys.append(col)
+    # Bank basket
+    bank_s = {t: series[t].values.astype(float) for t in LIVE_BASKET if t in series and len(series[t]) > 6}
+    if bank_s:
+        rets = {t: np.diff(np.log(v)) for t, v in bank_s.items()}
+        r5  = [r[-5:].mean()  for r in rets.values()]
+        rv5 = [r[-5:].std()   for r in rets.values()]
+        rv10= [r[-10:].std() if len(r)>=10 else r.std() for r in rets.values()]
+        rv30= [r[-30:].std() if len(r)>=30 else r.std() for r in rets.values()]
+        row["avg_return_5d"]      = float(np.mean(r5))
+        row["avg_volatility_5d"]  = float(np.mean(rv5))
+        row["avg_volatility_10d"] = float(np.mean(rv10))
+        row["avg_volatility_30d"] = float(np.mean(rv30))
+        live_keys += ["avg_return_5d","avg_volatility_5d","avg_volatility_10d","avg_volatility_30d"]
+        if len(rets) > 1:
+            min_len = min(len(r) for r in rets.values())
+            mat  = np.array([r[-min_len:] for r in rets.values()])
+            corr = np.corrcoef(mat)
+            iu   = np.triu_indices_from(corr, k=1)
+            row["avg_pairwise_correlation"] = float(np.mean(corr[iu]))
+            live_keys.append("avg_pairwise_correlation")
+        for ticker, col in [("SBIN.NS","sbi_vol_10d"),("HDFCBANK.NS","hdfc_vol_10d")]:
+            if ticker in rets and len(rets[ticker]) >= 10:
+                row[col] = float(rets[ticker][-10:].std())
+                live_keys.append(col)
 
-    # ---- Nifty Bank ---------------------------------------------------
-    if NIFTY_BANK_TICKER in series:
-        s = series[NIFTY_BANK_TICKER].values.astype(float)
+    # Nifty Bank
+    if NIFTY_BANK in series:
+        s = series[NIFTY_BANK].values.astype(float)
         if len(s) > 5:
-            row["nifty_bank_return_5d"] = float((s[-1] - s[-6]) / s[-6])
-            live_keys.append("nifty_bank_return_5d")
+            row["nifty_bank_return_5d"] = float((s[-1]-s[-6])/s[-6]); live_keys.append("nifty_bank_return_5d")
         if len(s) > 30:
-            roll_max = float(np.max(s[-30:]))
-            row["nifty_bank_drawdown_30d"] = float((s[-1] - roll_max) / roll_max)
-            live_keys.append("nifty_bank_drawdown_30d")
+            row["nifty_bank_drawdown_30d"] = float((s[-1]-np.max(s[-30:]))/np.max(s[-30:])); live_keys.append("nifty_bank_drawdown_30d")
         if len(s) > 14:
-            deltas = np.diff(s[-15:])
-            gains  = deltas[deltas > 0].sum()
-            losses = -deltas[deltas < 0].sum()
-            if losses > 0:
-                row["nifty_bank_rsi"] = float(100 - (100 / (1 + gains / losses)))
-            else:
-                row["nifty_bank_rsi"] = 100.0
+            d = np.diff(s[-15:]); g = d[d>0].sum(); l = -d[d<0].sum()
+            row["nifty_bank_rsi"] = float(100 - 100/(1+g/l)) if l > 0 else 100.0
             live_keys.append("nifty_bank_rsi")
 
-    # ---- India VIX ----------------------------------------------------
-    if INDIA_VIX_TICKER in series:
-        s = series[INDIA_VIX_TICKER].values.astype(float)
-        row["india_vix"] = float(s[-1])
+    # India VIX
+    if INDIA_VIX in series:
+        s = series[INDIA_VIX].values.astype(float)
+        row["india_vix"] = float(s[-1]); live_keys.append("india_vix")
         if len(s) > 1:
-            row["india_vix_change"] = float((s[-1] - s[-2]) / s[-2])
-        live_keys += ["india_vix", "india_vix_change"]
+            row["india_vix_change"] = float((s[-1]-s[-2])/s[-2]); live_keys.append("india_vix_change")
 
-    # ---- USD/INR ------------------------------------------------------
-    if USD_INR_TICKER in series:
-        s = series[USD_INR_TICKER].values.astype(float)
-        row["inr_usd"] = float(s[-1])
+    # USD/INR
+    if USD_INR in series:
+        s = series[USD_INR].values.astype(float)
+        row["inr_usd"] = float(s[-1]); live_keys.append("inr_usd")
         if len(s) > 1:
-            row["inr_usd_change"] = float((s[-1] - s[-2]) / s[-2])
-        live_keys += ["inr_usd", "inr_usd_change"]
+            row["inr_usd_change"] = float((s[-1]-s[-2])/s[-2]); live_keys.append("inr_usd_change")
 
-    return row, sorted(set(live_keys)), fetch_error
+    return row, sorted(set(live_keys)), fetch_err
 
 
-# ------------------------------------------------------------------ #
-#  Static feature defaults                                            #
-# ------------------------------------------------------------------ #
+# ─────────────────────────────────────────────────────────────────────────────
+#  Static defaults from features_india.csv
+# ─────────────────────────────────────────────────────────────────────────────
 
-def load_static_defaults() -> tuple:
-    """
-    Returns (feature_cols_list, last_row_dict) from the frozen
-    features_india.csv — used as fallbacks for columns the live
-    pull can't cheaply recompute.
-    """
-    list_path = os.path.join(DATA_DIR, "feature_list.txt")
-    feat_path = os.path.join(DATA_DIR, "features_india.csv")
-
-    with open(list_path) as fh:
-        feature_cols = [line.strip() for line in fh if line.strip()]
-
-    df = pd.read_csv(feat_path, index_col=0, parse_dates=True).sort_index()
+def load_static_defaults():
+    with open(os.path.join(DATA_DIR, "feature_list.txt")) as f:
+        feature_cols = [l.strip() for l in f if l.strip()]
+    df = pd.read_csv(os.path.join(DATA_DIR, "features_india.csv"), index_col=0, parse_dates=True).sort_index()
     last_row = df[feature_cols].ffill().iloc[-1]
     return feature_cols, last_row.to_dict()
 
 
-# ------------------------------------------------------------------ #
-#  Model scoring                                                      #
-# ------------------------------------------------------------------ #
+# ─────────────────────────────────────────────────────────────────────────────
+#  Score all models
+# ─────────────────────────────────────────────────────────────────────────────
 
 def score_models(feature_cols: list, row: dict) -> dict:
-    """Run LR, RF, XGBoost on the feature row. Returns {model_name: prob}."""
-    X = pd.DataFrame([row])[feature_cols]
     results = {}
 
     # Logistic Regression
     try:
-        with open(os.path.join(MODELS_DIR, "logistic_regression.pkl"), "rb") as fh:
-            lr = pickle.load(fh)
-        with open(os.path.join(MODELS_DIR, "scaler_lr.pkl"), "rb") as fh:
-            sc = pickle.load(fh)
-        results["Logistic Regression"] = float(lr.predict_proba(sc.transform(X))[0, 1])
-    except Exception as exc:
+        with open(os.path.join(MODELS_DIR, "logistic_regression.json")) as f:
+            results["Logistic Regression"] = _lr_predict(json.load(f), row, feature_cols)
+    except Exception:
         results["Logistic Regression"] = None
 
     # Random Forest
     try:
-        with open(os.path.join(MODELS_DIR, "random_forest_binary.pkl"), "rb") as fh:
-            rf = pickle.load(fh)
-        results["Random Forest"] = float(rf.predict_proba(X)[0, 1])
-    except Exception as exc:
+        with open(os.path.join(MODELS_DIR, "random_forest_binary.json")) as f:
+            results["Random Forest"] = _rf_predict(json.load(f), row, feature_cols)
+    except Exception:
         results["Random Forest"] = None
 
     # XGBoost
     try:
-        with open(os.path.join(MODELS_DIR, "xgboost.pkl"), "rb") as fh:
-            xgb_model = pickle.load(fh)
-        results["XGBoost"] = float(xgb_model.predict_proba(X)[0, 1])
-    except Exception as exc:
+        with open(os.path.join(MODELS_DIR, "xgboost.json")) as f:
+            results["XGBoost"] = _xgb_predict(json.load(f), row, feature_cols)
+    except Exception:
         results["XGBoost"] = None
 
     return results
 
 
-# ------------------------------------------------------------------ #
-#  Main compute payload (isolated from HTTP so it's testable)        #
-# ------------------------------------------------------------------ #
+# ─────────────────────────────────────────────────────────────────────────────
+#  Main payload
+# ─────────────────────────────────────────────────────────────────────────────
 
 def compute_payload() -> dict:
     try:
         feature_cols, static_defaults = load_static_defaults()
-        row, live_keys, fetch_error = build_live_feature_row(static_defaults)
-        scores = score_models(feature_cols, row)
+        row, live_keys, fetch_err     = build_feature_row(static_defaults)
+        scores                        = score_models(feature_cols, row)
         return {
-            "probability":          scores.get("Logistic Regression"),
-            "model_scores":         scores,
-            "live_feature_count":   len(live_keys),
-            "live_feature_keys":    live_keys,
-            "feature_row":          {k: row.get(k) for k in feature_cols},
-            "source":               "yfinance (Yahoo Finance), live pull",
-            "basket":               LIVE_BASKET,
-            "fetch_error":          fetch_error,
-            "computed_at":          datetime.datetime.utcnow().isoformat() + "Z",
+            "probability":        scores.get("Logistic Regression"),
+            "model_scores":       scores,
+            "live_feature_count": len(live_keys),
+            "live_feature_keys":  live_keys,
+            "feature_row":        {k: row.get(k) for k in feature_cols},
+            "source":             "yfinance (Yahoo Finance), live pull",
+            "basket":             LIVE_BASKET,
+            "fetch_error":        fetch_err,
+            "computed_at":        datetime.datetime.utcnow().isoformat() + "Z",
             "note": (
-                "Random Forest and XGBoost use the same live-basket features as "
-                "Logistic Regression. LSTM and GNN are not re-scored live (PyTorch "
-                "bundle size exceeds Vercel free-tier limit). Columns not in "
-                "live_feature_keys are held at their last known dataset value."
+                "LR, RF and XGBoost use pure-Python JSON inference "
+                "(predictions identical to sklearn/xgboost to <1e-8). "
+                "LSTM and GNN remain benchmark-only."
             ),
         }
     except Exception as exc:
         return {"error": str(exc), "error_type": type(exc).__name__}
 
 
-# ------------------------------------------------------------------ #
-#  Vercel HTTP handler                                                #
-# ------------------------------------------------------------------ #
+# ─────────────────────────────────────────────────────────────────────────────
+#  Vercel HTTP handler (class-based, required by Vercel Python runtime)
+# ─────────────────────────────────────────────────────────────────────────────
 
 class handler(BaseHTTPRequestHandler):
-    """
-    Vercel's required Python entrypoint: a BaseHTTPRequestHandler
-    subclass named exactly `handler`.  A plain function won't work —
-    Vercel will silently ignore the file.
-    """
-
     def log_message(self, fmt, *args):
-        # suppress the default access-log noise in Vercel function logs
-        pass
+        pass  # suppress access log noise
 
     def _write_json(self, payload: dict, status: int = 200):
         body = json.dumps(payload, default=str).encode("utf-8")
         self.send_response(status)
-        self.send_header("Content-Type",  "application/json")
+        self.send_header("Content-Type",   "application/json")
         self.send_header("Content-Length", str(len(body)))
-        # Never serve cached data — every fetch must be fresh
-        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.send_header("Cache-Control",  "no-store, no-cache, must-revalidate")
         self.send_header("Access-Control-Allow-Origin",  "*")
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.end_headers()
@@ -301,12 +302,9 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         try:
-            payload = compute_payload()
-            self._write_json(payload, 200)
+            self._write_json(compute_payload())
         except Exception as exc:
-            self._write_json(
-                {"error": str(exc), "error_type": type(exc).__name__}, 200
-            )
+            self._write_json({"error": str(exc), "error_type": type(exc).__name__})
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -316,12 +314,10 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
 
 if __name__ == "__main__":
-    import http.server
     port = int(os.environ.get("PORT", 8080))
-    server = http.server.HTTPServer(("0.0.0.0", port), handler)
-    print(f"Starting contagion live scoring API server on port {port}...")
+    server = __import__("http.server", fromlist=["HTTPServer"]).HTTPServer(("0.0.0.0", port), handler)
+    print(f"Contagion API running on port {port}...")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping api server...")
         server.server_close()
