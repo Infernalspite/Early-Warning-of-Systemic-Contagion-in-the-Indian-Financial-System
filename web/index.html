@@ -1042,12 +1042,18 @@ function renderSnapshot(row, liveKeys){
 
 async function tryBackend(){
   try{
-    const res = await fetch('/api/live_score', { signal: AbortSignal.timeout(4000) });
-    if(!res.ok) throw new Error('no backend deployed (' + res.status + ')');
+    // Use no-cache so every page load fetches fresh data (never serve a stale
+    // browser-cached response). Timeout 7s to survive Vercel free-tier cold starts
+    // which can take 3–5 s for the first invocation after an idle period.
+    const res = await fetch('/api/live_score', {
+      signal: AbortSignal.timeout(7000),
+      headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+    });
+    if(!res.ok) return { ok:false, reason: 'no backend deployed (HTTP ' + res.status + ')' };
     const data = await res.json();
-    if(data.error) throw new Error(data.error);
-    return data;
-  }catch(e){ return null; }
+    if(data.error) return { ok:false, reason: 'backend error: ' + data.error };
+    return { ok:true, data };
+  }catch(e){ return { ok:false, reason: e.message || 'request failed' }; }
 }
 
 async function getLiveUsdInr(){
@@ -1082,8 +1088,9 @@ async function runLiveScore(manual){
     return;
   }
 
-  const backend = await tryBackend();
-  if(backend && backend.model_scores){
+  const backendResult = await tryBackend();
+  if(backendResult.ok && backendResult.data.model_scores){
+    const backend = backendResult.data;
     liveState.tier = 2;
     liveState.backendPayload = backend;
     document.getElementById('liveTierTag').textContent = 'Tier 2 · full backend';
@@ -1106,7 +1113,7 @@ async function runLiveScore(manual){
     document.getElementById('liveTimestamp').textContent = fmtTime();
     document.getElementById('liveInputsUsed').textContent = '2 of 39 features live';
     statusEl.textContent = 'live · 2 of 39 inputs';
-    explainerEl.innerHTML = `Runs the trained Logistic Regression in your browser right now. USD/INR (${fx.rate.toFixed(2)}, as of ${fx.date}) is live; the other 37 features hold at their training-set average — no free, key-free feed exists for India VIX, Nifty Bank or individual NSE bank tickers. Deploy <code style="font-family:var(--mono)">api/live_score.py</code> to unlock Random Forest and XGBoost here too.`;
+    explainerEl.innerHTML = `Runs the trained Logistic Regression in your browser right now. USD/INR (${fx.rate.toFixed(2)}, as of ${fx.date}) is live; the other 37 features hold at their training-set average — no free, key-free feed exists for India VIX, Nifty Bank or individual NSE bank tickers. (Backend probe: ${backendResult.reason}.)`;
     caveatEl.innerHTML = `<b>Tier 1 active — partial live read, Logistic Regression only.</b> The other model pills are greyed out until the Tier 2 backend is deployed — they are not silently faked.`;
     renderModelPills();
     liveState.activeModel = 'Logistic Regression';
@@ -1116,8 +1123,8 @@ async function runLiveScore(manual){
     document.getElementById('liveScoreNum').textContent = '—';
     document.getElementById('liveTierTag').textContent = 'Offline · no tier reachable';
     statusEl.textContent = 'unreachable';
-    explainerEl.textContent = `Live feed blocked from this page (${err.message || 'network/CORS'}). Showing the frozen benchmark table below instead.`;
-    caveatEl.innerHTML = `<b>No live tier reachable.</b> Both the backend probe and the client-side FX feed failed (${err.message||'network blocked'}). The frozen benchmark results further down are unaffected.`;
+    explainerEl.innerHTML = `Both live paths failed. Backend probe: <code style="font-family:var(--mono)">${backendResult.reason}</code>. FX feed: <code style="font-family:var(--mono)">${err.message || 'network blocked'}</code>. Showing the frozen benchmark table below instead.`;
+    caveatEl.innerHTML = `<b>No live tier reachable.</b> "NetworkError when attempting to fetch resource" (Firefox) or "Failed to fetch" (Chrome) at this point means the browser couldn't complete the request at all — not a CORS rejection from the API, which would show a different message. Likely causes: a firewall/proxy blocking outbound requests to unfamiliar domains, a privacy extension blocking cross-origin fetches, or no internet connection at all right now. Open your browser's DevTools → Network tab and reload to see exactly which request failed and why. The frozen benchmark results further down are unaffected either way.`;
     renderModelPills();
   }
 }
@@ -1139,13 +1146,17 @@ try{
   document.getElementById('refreshBtn').addEventListener('click', () => { runLiveScore(true); startCountdown(); });
   runLiveScore(false);
   startCountdown();
+  // Refresh when user returns to this tab after being away
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible') { runLiveScore(false); startCountdown(); }
+  });
 }catch(e){ console.error('live inference bootstrap failed:', e); }
 
 /* ============================================================
    Top-bar pulse strip — same live USD/INR read, mirrored up top.
    ============================================================ */
 (function(){
-  const FALLBACK = { usdinr: "86.40", vix: "14.8", nifty: "51,240" };
+  const FALLBACK = { usdinr: "84.20", vix: "13.2", nifty: "55,800" };
   const dot = document.getElementById('pulseDot');
   const status = document.getElementById('pulseStatus');
   const note = document.getElementById('pulseNote');
