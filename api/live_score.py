@@ -314,3 +314,14 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
+
+if __name__ == "__main__":
+    import http.server
+    port = int(os.environ.get("PORT", 8080))
+    server = http.server.HTTPServer(("0.0.0.0", port), handler)
+    print(f"Starting contagion live scoring API server on port {port}...")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopping api server...")
+        server.server_close()

@@ -1,69 +1,64 @@
-# Deploying this dashboard (read this before deploying to Vercel)
+# Deployment Guide: Frontend + Python ML Backend
 
-## The structure that makes this work
+Due to the heavy machine learning dependencies (like `scikit-learn` and `xgboost` totaling >800MB uncompressed), Vercel's Hobby/Free tier 500MB function size limit will block the backend from building there. 
 
-```
-/index.html          ← the dashboard itself. MUST be at repo root.
-/api/live_score.py    ← optional live backend, auto-detected by Vercel
-/web/index.html       ← identical copy, kept for reference/non-Vercel hosting
-```
+To keep 100% of the repository's ML model capability intact without stripping down the models, we deploy:
+1. **Frontend (Static)**: Vercel or Render Static (free, fast, zero configuration).
+2. **Backend (API Service)**: Render Web Services (no size limits, fully supports scikit-learn/xgboost).
 
-There is **no `vercel.json`** in this repo on purpose. Vercel's zero-config
-detection handles both pieces automatically:
-- Any static file at the repo root is served as-is → `index.html` becomes
-  your site.
-- Any Python file under `/api` that follows Vercel's function interface
-  becomes a serverless function automatically at `/api/<filename>`.
+---
 
-**If you had an earlier version of this repo with a `vercel.json`
-using an explicit `builds` array pointing only at `web/**`** — that
-was the actual bug behind "nothing works, no live data, no models
-loading." An explicit `builds` list tells Vercel to build *only*
-what's listed and disables auto-detection for everything else,
-including `/api`. That config silently prevented the backend from
-ever deploying, no matter what the Python code did. It's been
-removed. Don't re-add a `vercel.json` unless you know you need one —
-zero-config is more robust here.
+## 1. Deploy the Backend on Render
 
-## Deploy
+Render fully supports Python services without size constraints.
 
-```bash
-vercel deploy
-```
-That's it. No environment variables, no build command, no output
-directory setting.
+1. Go to [Render](https://render.com) and log in.
+2. Click **New** -> **Web Service**.
+3. Connect your GitHub repository.
+4. Set the following configuration:
+   - **Name**: `early-warning-systemic-contagion`
+   - **Runtime**: `Python`
+   - **Build Command**: `pip install -r requirements.txt` (This installs numpy, pandas, sklearn, xgboost, yfinance)
+   - **Start Command**: `python api/live_score.py`
+5. Click **Deploy Web Service**.
+6. Render will assign you a URL like `https://early-warning-systemic-contagion.onrender.com`. Copy this URL!
 
-## Verify it actually worked (do this every time you redeploy)
+---
 
-1. Open `https://your-domain/` — the dashboard should render fully:
-   hero, feature matrix, correlation heatmap, model diagnostic tabs,
-   results table, discussion. All of this is static/embedded data and
-   works with zero network access, so if any of it is missing/blank,
-   that's a deployment problem, not a live-data problem — check the
-   Vercel build log.
-2. Open `https://your-domain/api/live_score` directly in your
-   browser. You should get a JSON body back (even `{"error": "..."}`
-   counts as working — the function ran). A blank page or a Vercel
-   error screen means the function itself isn't deploying.
-3. Back on the dashboard, look at the "Live Inference" section's tier
-   tag near the top of that panel. It will say one of:
-   - `Tier 2 · full backend` — the Python function is live and all
-     three eligible models (LogReg, RF, XGBoost) are re-scoring on
-     real Yahoo Finance data.
-   - `Tier 1 · client-side (partial)` — the backend isn't reachable,
-     but the page still runs a real live score in your browser using
-     live USD/INR data. This is expected if you haven't deployed
-     `/api`, and is not a bug.
-   - `Offline · no tier reachable` — both live paths failed (e.g. a
-     network that blocks outbound fetches entirely). The rest of the
-     dashboard (benchmark table, diagnostics, correlation heatmap)
-     is unaffected either way — those never depended on live data.
+## 2. Link Frontend to Render Backend
 
-## Why it refreshes on every load, and every 60 seconds after that
+1. In the repository, open `index.html` at the root and `web/index.html`.
+2. Find the constant `BACKEND_API_FALLBACK` near line 730:
+   ```javascript
+   const BACKEND_API_FALLBACK = 'https://early-warning-systemic-contagion.onrender.com';
+   ```
+3. Update this URL to match your deployed Render URL.
+4. Commit and push the change to GitHub:
+   ```bash
+   git add -A
+   git commit -m "Update fallback Render API URL"
+   git push
+   ```
 
-`runLiveScore()` runs immediately when the page's script executes —
-which is every page load and every reload, there's no caching layer
-in front of it. After that it's on a 60-second timer via
-`startCountdown()`. There's also a manual "Refresh now" button in the
-Live Inference panel if you don't want to wait. None of this uses
-`localStorage`/`sessionStorage` — every reload starts clean.
+---
+
+## 3. Deploy the Frontend on Vercel
+
+With `vercel.json` removed, Vercel zero-config will deploy the root `index.html` as a static page instantly:
+
+1. Run:
+   ```bash
+   vercel deploy
+   ```
+2. Open your Vercel deployment URL.
+3. The frontend will first probe Vercel's path `/api/live_score`, and when it fails (since we didn't deploy the backend there), it will seamlessly fallback to your Render API URL.
+4. The live tier indicator will light up as **`Tier 2 · full backend`** and all three models (Logistic Regression, Random Forest, XGBoost) will evaluate live on freshly scraped Yahoo Finance data!
+
+---
+
+## Verification Checklist
+
+1. Open `https://your-render-url.onrender.com/api/live_score` directly in the browser. It should return a full JSON response with `model_scores`.
+2. Open your Vercel frontend URL. Check that all benchmark graphs (ROC curves, heatmaps) render immediately.
+3. Check the "Live Inference" panel. The tier status must say `Tier 2 · full backend` and the model pills should be active.
+4. Click "Refresh now" to confirm a live refresh works.
