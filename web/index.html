@@ -952,7 +952,6 @@ const liveState = { history: {}, tier: null, timer: null, countdownTimer: null, 
                      activeModel: 'Logistic Regression', backendPayload: null, tier1Row: null };
 
 const MODEL_LIST = ["Logistic Regression", "Random Forest", "XGBoost", "LSTM", "GNN (GraphSAGE)"];
-const LIVE_CAPABLE = { "Logistic Regression": true, "Random Forest": true, "XGBoost": true, "LSTM": false, "GNN (GraphSAGE)": false };
 
 function sigmoid(z){ return 1/(1+Math.exp(-z)); }
 
@@ -973,11 +972,17 @@ function fmtTime(){ return new Date().toLocaleTimeString('en-IN', {hour:'2-digit
 function renderModelPills(){
   const el = document.getElementById('liveModelSelect');
   el.innerHTML = MODEL_LIST.map(name => {
-    const liveOK = liveState.tier === 2 ? LIVE_CAPABLE[name] : (name === 'Logistic Regression');
+    let liveOK;
+    if(liveState.tier === 2){
+      const scores = (liveState.backendPayload && liveState.backendPayload.model_scores) || {};
+      liveOK = scores[name] !== undefined && scores[name] !== null;
+    } else {
+      liveOK = (name === 'Logistic Regression');
+    }
     const cls = ['model-pill'];
     if(name === liveState.activeModel) cls.push('active');
     if(!liveOK) cls.push('disabled');
-    const title = liveOK ? '' : (LIVE_CAPABLE[name] ? 'title="Deploy the Tier 2 backend to live-score this model"' : 'title="Not re-scored live — see the note below"');
+    const title = liveOK ? '' : (liveState.tier === 2 ? 'title="This backend does not live-score this model"' : 'title="Deploy a backend (Vercel or run_local.py) to live-score this model"');
     return `<button class="${cls.join(' ')}" data-model="${name}" ${title} ${liveOK?'':'disabled'}>${name}</button>`;
   }).join('');
   el.querySelectorAll('.model-pill').forEach(btn => {
@@ -1042,12 +1047,8 @@ function renderSnapshot(row, liveKeys){
 
 async function tryBackend(){
   try{
-    // no-cache ensures every reload gets a fresh score, never a cached response
-    const res = await fetch('/api/live_score', {
-      signal: AbortSignal.timeout(60000),
-      headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
-    });
-    if(!res.ok) return { ok:false, reason: 'backend HTTP ' + res.status };
+    const res = await fetch('/api/live_score', { signal: AbortSignal.timeout(4000) });
+    if(!res.ok) return { ok:false, reason: 'no backend deployed (HTTP ' + res.status + ')' };
     const data = await res.json();
     if(data.error) return { ok:false, reason: 'backend error: ' + data.error };
     return { ok:true, data };
@@ -1144,17 +1145,13 @@ try{
   document.getElementById('refreshBtn').addEventListener('click', () => { runLiveScore(true); startCountdown(); });
   runLiveScore(false);
   startCountdown();
-  // Refresh when user returns to this tab after being away
-  document.addEventListener('visibilitychange', () => {
-    if(document.visibilityState === 'visible') { runLiveScore(false); startCountdown(); }
-  });
 }catch(e){ console.error('live inference bootstrap failed:', e); }
 
 /* ============================================================
    Top-bar pulse strip — same live USD/INR read, mirrored up top.
    ============================================================ */
 (function(){
-  const FALLBACK = { usdinr: "84.20", vix: "13.2", nifty: "55,800" };
+  const FALLBACK = { usdinr: "86.40", vix: "14.8", nifty: "51,240" };
   const dot = document.getElementById('pulseDot');
   const status = document.getElementById('pulseStatus');
   const note = document.getElementById('pulseNote');
