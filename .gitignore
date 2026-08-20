@@ -40,3 +40,5 @@ desktop.ini
 # Don't ignore the processed data or web assets
 !data/processed/
 !web/
+.vercel
+.env*
