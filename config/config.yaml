@@ -1,0 +1,161 @@
+# ============================================================
+# config.yaml — Central configuration for the Early-Warning
+# System for Systemic Risk in India's Bank–NBFC Network
+# ============================================================
+
+# --- API Keys -------------------------------------------------
+api_keys:
+  fred: "5f062907253285da010a668180124410"
+  cmie: "94cae7fbdeb08cb00c2c33966178e62c"
+
+# --- Date Range -----------------------------------------------
+dates:
+  start: "2005-01-01"
+  end:   "2026-09-15"
+  train_cutoff: "2022-01-01"   # Walk-forward baseline split
+
+# --- Crisis Events (for labels) -------------------------------
+# Each entry: name, event_date, label_window_start (30 trading days before)
+crises:
+  - name: "2008 GFC"
+    event_date: "2008-10-24"
+    label_start: "2008-09-01"
+  - name: "2013 Taper Tantrum"
+    event_date: "2013-08-28"
+    label_start: "2013-07-15"
+  - name: "IL&FS Crisis"
+    event_date: "2018-09-21"
+    label_start: "2018-08-10"
+  - name: "YES Bank Moratorium"
+    event_date: "2020-03-05"
+    label_start: "2020-01-27"
+  - name: "COVID-19 Crash"
+    event_date: "2020-03-23"
+    label_start: "2020-02-10"
+  - name: "Adani/Hindenburg"
+    event_date: "2023-01-24"
+    label_start: "2022-12-12"
+
+# --- Tickers --------------------------------------------------
+tickers:
+  banks:
+    HDFCBANK.NS:  "HDFC Bank"
+    ICICIBANK.NS: "ICICI Bank"
+    SBIN.NS:      "State Bank of India"
+    AXISBANK.NS:  "Axis Bank"
+    KOTAKBANK.NS: "Kotak Mahindra Bank"
+    INDUSINDBK.NS: "IndusInd Bank"
+    BANKBARODA.NS: "Bank of Baroda"
+    PNB.NS:       "Punjab National Bank"
+    CANBK.NS:     "Canara Bank"
+    UNIONBANK.NS: "Union Bank of India"
+    IDFCFIRSTB.NS: "IDFC First Bank"
+    FEDERALBNK.NS: "Federal Bank"
+    BANDHANBNK.NS: "Bandhan Bank"
+    RBLBANK.NS:   "RBL Bank"
+    YESBANK.NS:   "Yes Bank"
+
+  nbfcs:
+    BAJFINANCE.NS:  "Bajaj Finance"
+    BAJAJFINSV.NS:  "Bajaj Finserv"
+    MUTHOOTFIN.NS:  "Muthoot Finance"
+    CHOLAFIN.NS:    "Chola Finance"
+    M&MFIN.NS:      "M&M Financial"
+    LICHSGFIN.NS:   "LIC Housing Finance"
+    RECLTD.NS:      "REC Ltd"
+    PFC.NS:         "Power Finance Corp"
+    SRTRANSFIN.NS:  "Shriram Transport"
+    L&TFH.NS:       "L&T Finance"
+    MANAPPURAM.NS:  "Manappuram Finance"
+    IIFL.NS:        "IIFL Finance"
+
+  indices:
+    "^NSEI":     "NIFTY50"
+    "^NSEBANK":  "NiftyBank"
+    "^INDIAVIX": "IndiaVIX"
+    "INR=X":     "USDINR"
+    "NIFTY_FIN_SERVICE.NS": "NiftyFinService"
+
+# --- FRED Series ----------------------------------------------
+fred_series:
+  FEDFUNDS:  "US Fed Funds Rate"
+  VIXCLS:    "US VIX (CBOE)"
+  T10Y3M:    "US 10Y-3M Spread"
+  TEDRATE:   "TED Spread"
+  DGS10:     "US 10Y Treasury"
+  BAA10Y:    "Moody BAA-10Y Spread"
+  DEXINUS:   "INR/USD Exchange Rate (FRED)"
+
+# --- Feature Engineering Parameters --------------------------
+features:
+  correlation_window: 30         # days for rolling correlation graph
+  correlation_threshold: 0.6     # edge creation threshold
+  granger_window: 60             # days for Granger causality test
+  granger_lag: 5                 # max lag for Granger test
+  granger_p_threshold: 0.05      # significance threshold
+  covar_quantile: 0.05           # CoVaR tail quantile
+  srisk_k: 0.08                  # SRISK prudential capital ratio
+  mes_threshold: -0.02           # MES: market return below this triggers
+  volatility_window: 30          # rolling volatility window
+  finbert_batch_size: 16         # FinBERT inference batch size
+
+# --- Graph Parameters -----------------------------------------
+graph:
+  node_feature_dim: 8            # features per node
+  sequence_length: 30            # temporal window (trading days)
+  edge_types:
+    - "correlation"
+    - "granger"
+    - "exposure"
+
+# --- Model Parameters -----------------------------------------
+models:
+  lstm:
+    hidden_size: 128
+    num_layers: 2
+    dropout: 0.3
+    epochs: 100
+    batch_size: 64
+    learning_rate: 0.001
+    seq_len: 30
+
+  gnn:
+    hidden_channels: 64
+    out_channels: 32
+    num_layers: 2
+    dropout: 0.3
+    epochs: 100
+    batch_size: 32
+    learning_rate: 0.001
+
+  xgboost:
+    n_estimators: 500
+    max_depth: 6
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+
+  random_forest:
+    n_estimators: 500
+    max_depth: 10
+    random_state: 42
+
+# --- Paths ----------------------------------------------------
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  graphs: "data/graphs"
+  models: "models"
+  results: "results"
+  figures: "results/figures"
+  tables:  "results/tables"
+  rbi_pdfs: "data/raw/rbi_fsr"
+
+# --- Device ---------------------------------------------------
+device: "cuda"   # "cuda" or "cpu" — will auto-fallback to cpu if no GPU
+
+# --- Evaluation -----------------------------------------------
+evaluation:
+  classification_threshold: 0.5
+  lead_time_threshold: 0.4     # risk score threshold for "advance warning"
+  walk_forward_folds: 6        # one per crisis event

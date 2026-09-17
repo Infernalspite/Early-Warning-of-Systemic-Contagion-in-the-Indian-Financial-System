@@ -1,0 +1,3 @@
+model,accuracy,precision,recall,f1,roc_auc,pr_auc,brier_score,mcc,confusion_matrix
+LSTM (Macro-Only),0.4423,0.044,0.9062,0.0839,0.7594,0.0787,0.2057,0.1124,"[[473, 630], [3, 29]]"
+LSTM (Macro + Network),0.9242,0.1447,0.3438,0.2037,0.8309,0.0964,0.0718,0.1886,"[[1038, 65], [21, 11]]"

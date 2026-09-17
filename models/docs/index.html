@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indian Systemic Risk Contagion Engine</title>
+    
+    <!-- Modern Google Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- ApexCharts (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    
+    <!-- D3.js (CDN) -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-logo">
+                <div class="logo-icon"><i class="fa-solid fa-building-columns"></i></div>
+                <div class="logo-text">
+                    <h2>RISK ENGINE</h2>
+                    <span>INDIAN BANKING SYSTEM</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <button class="nav-item active" data-tab="tab-overview">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>CRI Overview</span>
+                </button>
+                <button class="nav-item" data-tab="tab-network">
+                    <i class="fa-solid fa-circle-nodes"></i>
+                    <span>Contagion Network</span>
+                </button>
+                <button class="nav-item" data-tab="tab-banks">
+                    <i class="fa-solid fa-bank"></i>
+                    <span>Bank Comparison</span>
+                </button>
+                <button class="nav-item" data-tab="tab-model">
+                    <i class="fa-solid fa-brain"></i>
+                    <span>Model Insights</span>
+                </button>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <p>Version 2.0 (Refined)</p>
+                <p>Purely Indian Subcontinent Data</p>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header Section -->
+            <header class="app-header">
+                <div class="header-title">
+                    <h1>Systemic Contagion Dashboard</h1>
+                    <p>Real-time Early Warning System powered by Machine Learning</p>
+                </div>
+                
+                <!-- Live Risk Status Badge -->
+                <div class="risk-badge-card">
+                    <div id="risk-pulse" class="pulse-indicator pulse-green"></div>
+                    <div class="risk-badge-text">
+                        <span class="label">Systemic Risk Status</span>
+                        <h3 id="risk-level-text">LOW RISK</h3>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Overview Section (Tab 1) -->
+            <section id="tab-overview" class="tab-content active-tab">
+                <!-- Top Key Metrics Cards -->
+                <div class="metrics-grid">
+                    <div class="metric-card glass">
+                        <div class="metric-icon"><i class="fa-solid fa-gauge-high"></i></div>
+                        <div class="metric-data">
+                            <span class="metric-title">Contagion Risk Index (CRI)</span>
+                            <div class="metric-value-row">
+                                <h2 id="metric-cri">0.0</h2>
+                                <span class="metric-unit">/ 100</span>
+                            </div>
+                            <span id="metric-cri-delta" class="metric-subtext"><i class="fa-solid fa-caret-up"></i> 0.0 vs 5d ago</span>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card glass">
+                        <div class="metric-icon"><i class="fa-solid fa-heart-pulse"></i></div>
+                        <div class="metric-data">
+                            <span class="metric-title">India VIX (Fear Index)</span>
+                            <h2 id="metric-vix">0.0</h2>
+                            <span id="metric-vix-subtext" class="metric-subtext">Normal Volatility</span>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card glass">
+                        <div class="metric-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                        <div class="metric-data">
+                            <span class="metric-title">RBI Policy Repo Rate</span>
+                            <h2 id="metric-repo">0.0%</h2>
+                            <span id="metric-repo-subtext" class="metric-subtext">RBI Monetary Stance</span>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card glass">
+                        <div class="metric-icon"><i class="fa-solid fa-indian-rupee-sign"></i></div>
+                        <div class="metric-data">
+                            <span class="metric-title">INR/USD Rate</span>
+                            <h2 id="metric-inr">₹0.00</h2>
+                            <span id="metric-inr-subtext" class="metric-subtext">Currency Value</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main CRI Chart Row -->
+                <div class="chart-container glass main-cri-chart">
+                    <div class="chart-header">
+                        <div class="chart-title">
+                            <h3>Contagion Risk Index (CRI) over Time</h3>
+                            <p>Derived from Random Forest model predicting pre-crisis and crisis likelihood based on 20 systemic banks.</p>
+                        </div>
+                        <div class="chart-actions">
+                            <button class="btn btn-outline active-range" data-range="all">All</button>
+                            <button class="btn btn-outline" data-range="5y">5Y</button>
+                            <button class="btn btn-outline" data-range="2y">2Y</button>
+                            <button class="btn btn-outline" data-range="1y">1Y</button>
+                        </div>
+                    </div>
+                    <div id="cri-timeline-chart" class="chart-body"></div>
+                </div>
+
+                <!-- Historic Crises Cards Row -->
+                <div class="crises-section">
+                    <h3 class="section-title">Historical Financial Shocks & Contagion Events</h3>
+                    <div class="crises-grid">
+                        <div class="crisis-card glass" data-date="2018-09-21">
+                            <div class="crisis-badge">IL&FS Collapse</div>
+                            <div class="crisis-date"><i class="fa-regular fa-calendar"></i> Sep 2018</div>
+                            <p>Shadow banking crisis triggered by defaults of IL&FS, causing a severe credit crunch in the Indian banking system.</p>
+                        </div>
+                        <div class="crisis-card glass" data-date="2020-03-05">
+                            <div class="crisis-badge badge-warning">Yes Bank Moratorium</div>
+                            <div class="crisis-date"><i class="fa-regular fa-calendar"></i> Mar 2020</div>
+                            <p>RBI imposed a moratorium on Yes Bank due to governance issues and excessive bad loans, highlighting private bank vulnerabilities.</p>
+                        </div>
+                        <div class="crisis-card glass" data-date="2020-03-23">
+                            <div class="crisis-badge badge-danger">COVID Market Crash</div>
+                            <div class="crisis-date"><i class="fa-regular fa-calendar"></i> Mar 2020</div>
+                            <p>Global pandemic shock caused Nifty Bank to crash by nearly 40% in a few weeks, leading to massive central bank liquidity intervention.</p>
+                        </div>
+                        <div class="crisis-card glass" data-date="2023-01-24">
+                            <div class="crisis-badge">Adani Market Shock</div>
+                            <div class="crisis-date"><i class="fa-regular fa-calendar"></i> Jan 2023</div>
+                            <p>Hindenburg report triggered massive selloffs in Adani Group stocks, raising concerns about banking system exposure and systemic links.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Contagion Network Section (Tab 2) -->
+            <section id="tab-network" class="tab-content">
+                <div class="network-layout">
+                    <!-- Left Sidebar Controls -->
+                    <div class="network-controls glass">
+                        <h3>Contagion Network Analysis</h3>
+                        <p class="subtitle">Visualizes rolling correlations (>0.40) between the 20 tracked banks. Thick lines represent high coupling.</p>
+                        
+                        <div class="control-group">
+                            <label>Timeline Playback</label>
+                            <div class="timeline-playback-row">
+                                <button id="network-play-btn" class="btn btn-primary"><i class="fa-solid fa-play"></i> Play</button>
+                                <div class="speed-control">
+                                    <span class="label">Speed:</span>
+                                    <select id="play-speed">
+                                        <option value="400">Fast</option>
+                                        <option value="800" selected>Normal</option>
+                                        <option value="1500">Slow</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <label>Filter Link Strength (Correlation)</label>
+                            <div class="slider-container">
+                                <input type="range" id="corr-threshold-slider" min="0.40" max="0.80" step="0.05" value="0.50">
+                                <div class="slider-labels">
+                                    <span>0.40</span>
+                                    <span id="corr-threshold-value" class="highlight">0.50</span>
+                                    <span>0.80</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Statistics Column inside network side panel -->
+                        <div class="network-stats">
+                            <div class="stat-row">
+                                <span>Active Interbank Links:</span>
+                                <strong id="net-stat-links">0</strong>
+                            </div>
+                            <div class="stat-row">
+                                <span>Network Density:</span>
+                                <strong id="net-stat-density">0.0%</strong>
+                            </div>
+                            <div class="stat-row">
+                                <span>Absorption Ratio (PC1):</span>
+                                <strong id="net-stat-pca">0.0%</strong>
+                            </div>
+                        </div>
+
+                        <div class="legend-box">
+                            <h4>Legend</h4>
+                            <div class="legend-item">
+                                <span class="circle node-psu"></span>
+                                <span>PSU Banks (Left Circle)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="circle node-private"></span>
+                                <span>Private Banks (Right Circle)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="line corr-high"></span>
+                                <span>High Correlation (>0.60)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="line corr-med"></span>
+                                <span>Medium Correlation (0.45-0.60)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Main Graph Panel -->
+                    <div class="network-display glass">
+                        <div class="display-header">
+                            <div class="current-date-badge"><i class="fa-regular fa-calendar"></i> <span id="network-current-date">Loading...</span></div>
+                            <div class="risk-label-badge" id="network-risk-badge">Normal Period</div>
+                        </div>
+                        
+                        <div id="contagion-network-svg-container" class="network-svg-wrapper">
+                            <!-- SVG elements created by D3.js -->
+                        </div>
+                        
+                        <!-- Timeline scrub slider at bottom of map -->
+                        <div class="timeline-scrubber-row">
+                            <input type="range" id="network-time-slider" min="0" max="100" value="0" class="time-scrubber">
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Bank Comparison Section (Tab 3) -->
+            <section id="tab-banks" class="tab-content">
+                <div class="bank-layout">
+                    <!-- Left Sidebar Selectors -->
+                    <div class="bank-selector-panel glass">
+                        <h3>Bank Stock Performance</h3>
+                        <p class="subtitle">Select banks to compare normalized price trends (Base = 100). Highlights cumulative stress differences.</p>
+                        
+                        <div class="selection-actions">
+                            <button id="select-all-banks" class="btn btn-outline btn-sm">Select All</button>
+                            <button id="deselect-all-banks" class="btn btn-outline btn-sm">Deselect All</button>
+                        </div>
+                        
+                        <div class="bank-checkbox-list" id="bank-selectors-container">
+                            <!-- Checkboxes created dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Right Main Chart Panel -->
+                    <div class="bank-display glass">
+                        <div class="chart-header">
+                            <div class="chart-title">
+                                <h3>Normalized Bank Stock Prices</h3>
+                                <p>Shows relative stock performance normalized to 100 at start of the series. Red shaded regions = historic crisis periods.</p>
+                            </div>
+                            <div class="toggle-container">
+                                <span class="toggle-label">Price Mode:</span>
+                                <div class="toggle-buttons">
+                                    <button id="btn-price-norm" class="btn btn-outline btn-sm active">Normalized</button>
+                                    <button id="btn-price-raw" class="btn btn-outline btn-sm">Raw (INR)</button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div id="bank-prices-comparison-chart" class="chart-body"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Model Insights Section (Tab 4) -->
+            <section id="tab-model" class="tab-content">
+                <div class="model-insights-grid">
+                    <!-- Feature Importances Card -->
+                    <div class="insights-card glass feature-card">
+                        <h3><i class="fa-solid fa-list-check"></i> ML Feature Importances</h3>
+                        <p class="subtitle">Shows the relative contribution of each indicator to the Random Forest crisis early warning predictions.</p>
+                        
+                        <div id="model-feature-importance-chart" class="chart-body"></div>
+                    </div>
+
+                    <!-- Model Specifications Card -->
+                    <div class="insights-card glass spec-card">
+                        <h3><i class="fa-solid fa-sliders"></i> System Specifications</h3>
+                        <p class="subtitle">Architecture details and validation parameters of the contagion engine.</p>
+                        
+                        <div class="spec-list">
+                            <div class="spec-item">
+                                <span class="spec-label">Model Classifier:</span>
+                                <span class="spec-value">Random Forest Classifier (scikit-learn)</span>
+                            </div>
+                            <div class="spec-item">
+                                <span class="spec-label">Input Shape:</span>
+                                <span class="spec-value" id="spec-features-count">31 Features</span>
+                            </div>
+                            <div class="spec-item">
+                                <span class="spec-label">Hyperparameters:</span>
+                                <span class="spec-value">n_estimators=200, max_depth=10, min_samples_leaf=5, balanced_weights</span>
+                            </div>
+                            <div class="spec-item">
+                                <span class="spec-label">Out-of-Sample Accuracy:</span>
+                                <span class="spec-value highlight-value" id="spec-accuracy">80.4%</span>
+                            </div>
+                            <div class="spec-item">
+                                <span class="spec-label">Cross-Validation Split:</span>
+                                <span class="spec-value">Time-based Split (Train: 2014-2021 | Test: 2022-2026)</span>
+                            </div>
+                            <div class="spec-item">
+                                <span class="spec-label">Primary Signal Indicators:</span>
+                                <span class="spec-value">INR/USD currency valuation, RBI policy rate, Absorption Ratio, banking volatilities</span>
+                            </div>
+                        </div>
+                        
+                        <div class="warning-explanation">
+                            <h4><i class="fa-solid fa-triangle-exclamation"></i> About the Signals</h4>
+                            <p><strong>CRI Score (0–100)</strong> operates on three predicted regimes:</p>
+                            <ul>
+                                <li><strong class="color-green">Normal Regime (< 30)</strong>: Average volatility, normal interbank correlations, standard repo rate adjustments.</li>
+                                <li><strong class="color-yellow">Pre-Crisis Regime (30–60)</strong>: 30-day window prior to major default/regulatory action. Often characterized by rupee depreciation and rising interbank correlation.</li>
+                                <li><strong class="color-red">Crisis Regime (>= 60)</strong>: Market crash during which Nifty Bank falls sharply and interbank contagion spreads.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Custom Script -->
+    <script src="app.js"></script>
+</body>
+</html>

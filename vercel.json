@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "functions": {
+    "api/live_score.py": {
+      "includeFiles": "models/**,data/processed/**",
+      "maxDuration": 30
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/live_score",
+      "dest": "/api/live_score.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
+}

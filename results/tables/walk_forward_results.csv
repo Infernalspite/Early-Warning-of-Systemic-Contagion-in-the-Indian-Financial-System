@@ -1,0 +1,6 @@
+model,accuracy,precision,recall,f1,roc_auc,pr_auc,brier_score,mcc,confusion_matrix,test_crisis,train_until
+WalkForward_XGB_2013 Taper Tantrum,0.4306,0.4306,1.0,0.6019,0.7467,0.7356,0.5601,0.0,"[[0, 41], [0, 31]]",2013 Taper Tantrum,2008-10-24
+WalkForward_XGB_IL&FS Crisis,0.6716,0.551,1.0,0.7105,0.4935,0.3585,0.3384,0.498,"[[18, 22], [0, 27]]",IL&FS Crisis,2013-08-28
+WalkForward_XGB_YES Bank Moratorium,0.6866,0.75,0.6923,0.72,0.7637,0.7993,0.2776,0.3669,"[[19, 9], [12, 27]]",YES Bank Moratorium,2018-09-21
+WalkForward_XGB_COVID-19 Crash,0.8209,1.0,0.6923,0.8182,0.957,0.9702,0.1678,0.6961,"[[28, 0], [12, 27]]",COVID-19 Crash,2020-03-05
+WalkForward_XGB_Adani/Hindenburg,0.7534,1.0,0.4375,0.6087,0.9848,0.9866,0.1476,0.5514,"[[41, 0], [18, 14]]",Adani/Hindenburg,2020-03-23

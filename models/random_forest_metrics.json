@@ -1,0 +1,53 @@
+{
+  "model": "Random Forest",
+  "split_date": "2022-01-01",
+  "train_samples": 1714,
+  "test_samples": 1111,
+  "accuracy": 0.972997299729973,
+  "precision": 0.0,
+  "recall": 0.0,
+  "f1": 0.0,
+  "roc_auc": 0.7888066604995374,
+  "top_features": [
+    {
+      "feature": "inr_usd",
+      "importance": 0.13671986970371702
+    },
+    {
+      "feature": "rbi_repo_rate",
+      "importance": 0.10781140504221193
+    },
+    {
+      "feature": "covar_system",
+      "importance": 0.10320799003828043
+    },
+    {
+      "feature": "avg_pairwise_correlation",
+      "importance": 0.06724092143979978
+    },
+    {
+      "feature": "mes_avg",
+      "importance": 0.059111659264040904
+    },
+    {
+      "feature": "avg_volatility_30d",
+      "importance": 0.05371608822246381
+    },
+    {
+      "feature": "granger_count",
+      "importance": 0.044911784795054026
+    },
+    {
+      "feature": "srisk_proxy",
+      "importance": 0.04043210089974357
+    },
+    {
+      "feature": "rbi_repo_rate_change_30d",
+      "importance": 0.035088109278127
+    },
+    {
+      "feature": "absorption_ratio",
+      "importance": 0.034506784918759664
+    }
+  ]
+}

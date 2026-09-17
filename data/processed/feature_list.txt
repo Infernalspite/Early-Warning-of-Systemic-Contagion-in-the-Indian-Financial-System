@@ -1,0 +1,23 @@
+avg_volatility_30d
+avg_return_30d
+covar_system
+mes_avg
+srisk_proxy
+granger_count
+mean_degree_centrality
+mean_betweenness_centrality
+clustering_coefficient
+pagerank_mean
+network_density_06
+absorption_ratio
+US Fed Funds Rate
+US VIX (CBOE)
+US 10Y-3M Spread
+TED Spread
+US 10Y Treasury
+Moody BAA-10Y Spread
+INR/USD Exchange Rate (FRED)
+repo_rate
+finbert_sentiment_stress
+finbert_sentiment_ma30
+mibor_repo_spread

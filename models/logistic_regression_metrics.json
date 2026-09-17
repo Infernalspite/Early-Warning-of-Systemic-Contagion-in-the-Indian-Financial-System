@@ -1,0 +1,11 @@
+{
+  "model": "LogisticRegression",
+  "split_date": "2022-01-01",
+  "n_train": 1714,
+  "n_test": 1111,
+  "accuracy": 0.423,
+  "precision": 0.0392,
+  "recall": 0.8667,
+  "f1": 0.075,
+  "roc_auc": 0.8608
+}
