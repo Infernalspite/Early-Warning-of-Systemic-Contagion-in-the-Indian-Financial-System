@@ -1,0 +1,4 @@
+model,pr_auc,roc_auc,f1,accuracy,precision,recall,brier_score,mcc
+GNN (Correlation Only),0.712,0.843,0.541,0.931,0.623,0.478,0.062,0.518
+GNN (Corr + Granger),0.779,0.881,0.603,0.943,0.681,0.541,0.051,0.584
+GNN (Corr + Granger + Exposure),0.847,0.921,0.671,0.956,0.744,0.612,0.038,0.653
