@@ -113,10 +113,15 @@ def fetch_sentiment_features():
     rbi_fsr_score = None
 
     if rbi_dir.exists():
-        pdf_files = sorted(rbi_dir.glob("*.pdf")) + sorted(rbi_dir.glob("*.PDF"))
-        xl_files  = sorted(rbi_dir.glob("*.xlsx")) + sorted(rbi_dir.glob("*.xls")) + sorted(rbi_dir.glob("*.XLSX"))
-
-        all_files = pdf_files + xl_files
+        # Deduplicate — Windows is case-insensitive so *.pdf and *.PDF can match same file
+        seen = set()
+        all_files = []
+        for f in sorted(rbi_dir.iterdir()):
+            if f.suffix.lower() in (".pdf", ".xlsx", ".xls") and f.resolve() not in seen:
+                seen.add(f.resolve())
+                all_files.append(f)
+        pdf_files = [f for f in all_files if f.suffix.lower() == ".pdf"]
+        xl_files  = [f for f in all_files if f.suffix.lower() in (".xlsx", ".xls")]
         print(f"Found {len(pdf_files)} PDFs and {len(xl_files)} Excel files in rbi_fsr/")
 
         for fpath in all_files:
