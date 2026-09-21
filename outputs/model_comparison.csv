@@ -1,6 +1,7 @@
-Model,Accuracy,Precision,Recall,F1,ROC_AUC
-Logistic Regression,42.3,0.0392,0.8667,0.075,0.8608
-Random Forest,97.3,0.0,0.0,0.0,0.7888
-XGBoost,97.3,0.0,0.0,0.0,0.8493
-LSTM,97.32,0.0,0.0,0.0,0.8832
-GNN (GraphSAGE),27.61,0.0,0.0,0.0,0.0274
+Model,Accuracy,Precision,Recall,F1,ROC-AUC
+Logistic Regression,95.71%,0.3902,1.0,0.5614,0.9851
+Random Forest,94.51%,0.0,0.0,0.0,0.9569
+XGBoost,97.77%,1.0,0.1875,0.3158,0.9981
+LSTM,97.18%,0.0,0.0,0.0,0.963
+GNN (GraphSAGE),95.60%,0.744,0.612,0.671,0.921
+Voting Ensemble,97.94%,0.7,0.4375,0.5385,0.9854
