@@ -509,8 +509,10 @@ function buildBankSeries() {
 // ================================================================
 function initModelTab() {
     const metrics = dashboardData.model_metrics;
-    document.getElementById('spec-accuracy').textContent     = `${(metrics.accuracy * 100).toFixed(1)}%`;
-    document.getElementById('spec-features-count').textContent = `${metrics.features_used.length} Features`;
+    const accEl  = document.getElementById('spec-accuracy');
+    const featEl = document.getElementById('spec-features-count');
+    if (accEl)  accEl.textContent  = `${(metrics.accuracy * 100).toFixed(1)}%`;
+    if (featEl) featEl.textContent = `${metrics.features_used.length} Features`;
 
     const top10 = [...dashboardData.feature_importances]
         .sort((a, b) => b.importance - a.importance)
