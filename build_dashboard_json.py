@@ -1,6 +1,6 @@
 import datetime
 import os
-﻿import json, warnings, numpy as np, pandas as pd, yfinance as yf, shutil
+import json, warnings, numpy as np, pandas as pd, yfinance as yf, shutil
 from pathlib import Path
 warnings.filterwarnings('ignore')
 
