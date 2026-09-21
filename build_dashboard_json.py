@@ -1,3 +1,5 @@
+import datetime
+import os
 ﻿import json, warnings, numpy as np, pandas as pd, yfinance as yf, shutil
 from pathlib import Path
 warnings.filterwarnings('ignore')
@@ -41,7 +43,7 @@ BANKS = {
     'AU Small Finance Bank':'AUBANK.NS','RBL Bank':'RBLBANK.NS','Indian Overseas Bank':'IOB.NS',
     'Bank of Maharashtra':'MAHABANK.NS','CSB Bank':'CSB.NS',
 }
-start_date = df['Date'].iloc[0]; end_date = df['Date'].iloc[-1]
+start_date = df['Date'].iloc[0]; end_date = datetime.date.today().strftime('%Y-%m-%d')
 date_idx = pd.to_datetime(dates)
 print(f'Fetching bank prices {start_date} to {end_date} ...')
 bank_prices = {}
