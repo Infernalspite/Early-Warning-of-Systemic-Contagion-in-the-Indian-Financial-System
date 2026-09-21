@@ -52,7 +52,7 @@ jobs:
       - name: Check for changes
         id: check_changes
         run: |
-          git diff --quiet web/data/dashboard_data.json docs/data/dashboard_data.json config/config.yaml \
+          git diff --quiet web/data/dashboard_data.json docs/data/dashboard_data.json web/index.html docs/index.html config/config.yaml \
             && echo "changed=false" >> $GITHUB_OUTPUT \
             || echo "changed=true" >> $GITHUB_OUTPUT
 
@@ -62,7 +62,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add web/data/dashboard_data.json docs/data/dashboard_data.json config/config.yaml
+          git add web/data/dashboard_data.json docs/data/dashboard_data.json web/index.html docs/index.html config/config.yaml
           git commit -m "chore: auto-update dashboard data $(date -u +'%Y-%m-%d')"
           git push origin HEAD:master
           git push origin HEAD:main

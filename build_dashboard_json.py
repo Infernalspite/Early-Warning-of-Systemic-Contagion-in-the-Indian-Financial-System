@@ -138,3 +138,7 @@ print(f'Saved {out} ({out.stat().st_size/1e6:.1f} MB)')
 docs_dir = ROOT / 'docs' / 'data'; docs_dir.mkdir(parents=True, exist_ok=True)
 shutil.copy(out, docs_dir / 'dashboard_data.json')
 print('Copied to docs/data/dashboard_data.json DONE')
+
+
+print('\nBuilding new frontend interface HTML...')
+exec(open('build_new_frontend.py', encoding='utf-8').read())
