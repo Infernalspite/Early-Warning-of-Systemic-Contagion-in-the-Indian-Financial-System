@@ -12,8 +12,24 @@
       "dest": "/api/live_score.py"
     },
     {
+      "src": "/data/(.*)",
+      "dest": "/web/data/$1"
+    },
+    {
+      "src": "/style.css",
+      "dest": "/web/style.css"
+    },
+    {
+      "src": "/app.js",
+      "dest": "/web/app.js"
+    },
+    {
+      "src": "/outputs/(.*)",
+      "dest": "/outputs/$1"
+    },
+    {
       "src": "/(.*)",
-      "dest": "/index.html"
+      "dest": "/web/index.html"
     }
   ]
 }
