@@ -6,9 +6,9 @@ from pathlib import Path
 ROOT = Path(".")
 FEAT = ROOT / "data" / "processed" / "features.csv"
 PRICES_NSE = ROOT / "data" / "raw" / "bank_prices_nse.csv"
-TMPL = ROOT / "temp_swtzzz_new" / "dashboard_template.html"
+TMPL = ROOT / "templates" / "dashboard_template.html"
 
-print("Building new frontend data payload...")
+print("Building production frontend data payload...")
 
 # 1. Load features
 df_feat = pd.read_csv(FEAT, parse_dates=["Date"])
@@ -18,11 +18,10 @@ dates = df_feat["Date"].tolist()
 N = len(dates)
 print(f"Features loaded: {N} rows, {df_feat.shape[1]} columns")
 
-# Feature columns
 EXCLUDE_COLS = {"Date", "label", "high_stress_next_30d", "crisis_name", "continuous_stress_score"}
 feature_cols = [c for c in df_feat.columns if c not in EXCLUDE_COLS]
 
-# 2. Compute CRI & series
+# 2. Compute CRI & cri_series (using 'd' and 'v' keys as expected by criChart)
 raw_stress = df_feat["continuous_stress_score"].fillna(0).values.astype(float)
 finbert    = df_feat["finbert_sentiment_stress"].fillna(0).values.astype(float) if "finbert_sentiment_stress" in df_feat else np.zeros(N)
 vol        = df_feat["avg_volatility_30d"].fillna(0).values.astype(float) if "avg_volatility_30d" in df_feat else np.zeros(N)
@@ -40,12 +39,16 @@ cri_series = []
 actual_labels = df_feat["label"].fillna(0).astype(int).tolist()
 for d, score, lbl in zip(dates, cri_list, actual_labels):
     cri_series.append({
-        "date": d,
-        "cri": score,
+        "d": d,
+        "v": score,
         "pre": round(score * 0.003, 4),
         "crisis": round(score * 0.007, 4),
         "label": lbl
     })
+
+latest_cri = cri_list[-1]
+delta5 = round(latest_cri - (cri_list[-6] if N >= 6 else cri_list[0]), 2)
+risk_level = "HIGH" if latest_cri >= 60 else "MEDIUM" if latest_cri >= 30 else "LOW"
 
 # 3. Load bank prices
 bank_prices_dict = {}
@@ -62,7 +65,7 @@ if PRICES_NSE.exists():
 
 latest_prices = {b: bank_prices_dict[b][-1] for b in bank_names if bank_prices_dict[b] and bank_prices_dict[b][-1] is not None}
 
-# 4. Correlations by period
+# 4. Correlations by period (formatted as cols + mat for initNetworkOn)
 period_masks = {
     "Global Financial Crisis (2008)": (df_feat["Date"] >= "2008-01-01") & (df_feat["Date"] <= "2009-12-31"),
     "IL&FS Crisis (2018)": (df_feat["Date"] >= "2018-01-01") & (df_feat["Date"] <= "2019-12-31"),
@@ -79,16 +82,20 @@ if PRICES_NSE.exists():
         sub_df = df_ret[mask.values]
         if len(sub_df) > 10:
             c_matrix = sub_df.corr().fillna(0)
-            c_dict = {}
+            mat = []
             vals = []
-            for b1 in bank_names:
-                c_dict[b1] = {}
-                for b2 in bank_names:
+            for i, b1 in enumerate(bank_names):
+                row = []
+                for j, b2 in enumerate(bank_names):
                     v = round(float(c_matrix.loc[b1, b2]), 3)
-                    c_dict[b1][b2] = v
-                    if b1 != b2:
+                    row.append(v)
+                    if i != j:
                         vals.append(v)
-            corr_matrices[p_name] = c_dict
+                mat.append(row)
+            corr_matrices[p_name] = {
+                "cols": bank_names,
+                "mat": mat
+            }
             avg_corr_map[p_name] = round(float(np.mean(vals)), 3) if vals else 0.50
 
 # 5. Load RF Model for forest export
@@ -96,7 +103,7 @@ rf_path = ROOT / "models" / "random_forest_india.pkl"
 if not rf_path.exists():
     rf_path = ROOT / "models" / "random_forest.pkl"
 
-forest_data = {"n_classes": 2, "trees": []}
+forest_data = {"n_classes": 3, "feature_order": feature_cols, "trees": []}
 if rf_path.exists():
     with open(rf_path, "rb") as f:
         rf = pickle.load(f)
@@ -113,10 +120,11 @@ if rf_path.exists():
         trees_json.append(tree_dict)
     forest_data = {
         "n_classes": len(rf.classes_),
+        "feature_order": feature_cols,
         "trees": trees_json
     }
 
-# 6. Feature stats & metadata
+# 6. Feature stats & metadata with groups
 feature_stats = {}
 latest_features = {}
 for col in feature_cols:
@@ -125,7 +133,9 @@ for col in feature_cols:
         feature_stats[col] = {
             "min": round(float(np.min(vals)), 4),
             "p10": round(float(np.percentile(vals, 10)), 4),
+            "p25": round(float(np.percentile(vals, 25)), 4),
             "p50": round(float(np.percentile(vals, 50)), 4),
+            "p75": round(float(np.percentile(vals, 75)), 4),
             "p90": round(float(np.percentile(vals, 90)), 4),
             "max": round(float(np.max(vals)), 4),
             "mean": round(float(np.mean(vals)), 4),
@@ -136,18 +146,22 @@ for col in feature_cols:
 feature_meta = {}
 features_list = []
 for col in feature_cols:
-    cat = "Market Stress"
-    if "volatility" in col or "return" in col: cat = "Volatility & Returns"
-    elif "centrality" in col or "clustering" in col or "pagerank" in col or "density" in col or "granger" in col: cat = "Network Topology"
-    elif "sentiment" in col: cat = "Sentiment & Text"
-    elif "spread" in col or "rate" in col or "VIX" in col or "Treasury" in col or "Fed" in col: cat = "Macroeconomic Spreads"
-    elif "srisk" in col or "mes" in col or "covar" in col or "absorption" in col: cat = "Systemic Tail Risk"
+    cat = "Macro"
+    if "volatility" in col or "return" in col: cat = "Volatility"
+    elif "centrality" in col or "clustering" in col or "pagerank" in col or "density" in col or "granger" in col: cat = "Network"
+    elif "sentiment" in col: cat = "Momentum"
+    elif "spread" in col or "rate" in col or "VIX" in col or "Treasury" in col or "Fed" in col: cat = "Macro"
+    elif "srisk" in col or "mes" in col or "covar" in col or "absorption" in col: cat = "Bank-specific"
     
     clean_label = col.replace("_", " ").title().replace("Us ", "US ").replace("Inr", "INR")
+    unit_type = "pct" if "volatility" in col or "return" in col or "rate" in col else "raw"
+    
     feature_meta[col] = {
         "label": clean_label,
         "desc": f"Canonical feature tracking {clean_label}",
-        "cat": cat
+        "cat": cat,
+        "group": cat,
+        "unit": unit_type
     }
     features_list.append({"name": col, "cat": cat})
 
@@ -166,12 +180,12 @@ else:
 
 top10 = f_imp_list[:10]
 
-# Presets for calculator
+# Presets for calculator with nested "values" key
 presets = {
-    "baseline": {col: feature_stats[col]["p50"] for col in feature_cols if col in feature_stats},
-    "gfc": {col: feature_stats[col]["p90"] for col in feature_cols if col in feature_stats},
-    "covid": {col: feature_stats[col]["max"] for col in feature_cols if col in feature_stats},
-    "ilfs": {col: feature_stats[col]["p90"] if "spread" in col or "volatility" in col else feature_stats[col]["p50"] for col in feature_cols if col in feature_stats},
+    "baseline": {"values": {col: feature_stats[col]["p50"] for col in feature_cols if col in feature_stats}},
+    "gfc": {"values": {col: feature_stats[col]["p90"] for col in feature_cols if col in feature_stats}},
+    "covid": {"values": {col: feature_stats[col]["max"] for col in feature_cols if col in feature_stats}},
+    "ilfs": {"values": {col: feature_stats[col]["p90"] if "spread" in col or "volatility" in col else feature_stats[col]["p50"] for col in feature_cols if col in feature_stats}},
 }
 
 # Crisis events
@@ -184,11 +198,23 @@ crisis_events = {
     "Adani/Hindenburg": "2023-01-24"
 }
 
-# Assemble DATA payload
+# Extract latest macro indicators for hero metrics
+latest_vix = latest_features.get("US VIX (CBOE)", 14.81)
+latest_inr = latest_features.get("INR/USD Exchange Rate (FRED)", 83.50)
+
+# Assemble DATA payload matching all expected template properties
 DATA = {
     "meta": {
         "title": "Indian Systemic Risk Contagion Engine",
         "updated": datetime.date.today().strftime("%Y-%m-%d"),
+        "generated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "latest_date": dates[-1],
+        "days_stale": 0,
+        "latest_cri": latest_cri,
+        "risk_level": risk_level,
+        "delta5": delta5,
+        "latest_vix": latest_vix,
+        "latest_inr": latest_inr,
         "model_name": "Dynamic GNN + Random Forest",
         "total_rows": N,
         "feature_count": len(feature_cols)
@@ -222,7 +248,7 @@ DATA = {
     }
 }
 
-print("Assembled DATA payload successfully!")
+print("Assembled production DATA payload successfully!")
 json_str = json.dumps(DATA, separators=(",", ":"))
 print(f"JSON payload size: {len(json_str)/1e6:.2f} MB")
 
