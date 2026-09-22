@@ -11,7 +11,7 @@ api_keys:
 # --- Date Range -----------------------------------------------
 dates:
   start: "2005-01-01"
-  end:   "2026-09-15"
+  end:   "2026-09-22"
   train_cutoff: "2022-01-01"   # Walk-forward baseline split
 
 # --- Crisis Events (for labels) -------------------------------
