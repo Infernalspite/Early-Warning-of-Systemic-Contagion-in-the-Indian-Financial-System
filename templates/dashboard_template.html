@@ -463,6 +463,78 @@
   ::-webkit-scrollbar{height:8px; width:8px;}
   ::-webkit-scrollbar-track{background:transparent;}
   ::-webkit-scrollbar-thumb{background:var(--hairline); border-radius:4px;}
+
+.trigger-update-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(74, 82, 224, 0.12);
+  color: var(--brand);
+  border: 1px solid rgba(74, 82, 224, 0.3);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.trigger-update-btn:hover {
+  background: var(--brand);
+  color: #ffffff;
+  border-color: var(--brand);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(74, 82, 224, 0.25);
+}
+
+.update-modal-backdrop {
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  background: rgba(19, 23, 40, 0.6);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
+}
+.update-modal-backdrop.active {
+  opacity: 1; pointer-events: auto;
+}
+.update-modal-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 28px;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--hairline);
+  position: relative;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+.update-modal-card h3 {
+  margin: 0 0 10px 0; font-family: 'IBM Plex Serif', serif; font-size: 20px; color: var(--text);
+}
+.update-modal-card p {
+  margin: 0 0 16px 0; font-size: 13.5px; color: var(--text-dim); line-height: 1.5;
+}
+.update-modal-actions {
+  display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;
+}
+.update-modal-btn {
+  padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none;
+  transition: all 0.15s ease;
+}
+.update-modal-btn.primary {
+  background: var(--brand); color: #fff; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+}
+.update-modal-btn.primary:hover {
+  background: #3940c4;
+}
+.update-modal-btn.secondary {
+  background: var(--hairline-soft); color: var(--text-dim);
+}
+.update-modal-btn.secondary:hover {
+  background: var(--hairline); color: var(--text);
+}
+
 </style>
 </head>
 <body>
@@ -490,7 +562,13 @@
       <a href="#calculator" data-page="calculator">Calculator</a>
       <a href="#model" data-page="model">Model</a>
     </nav>
-    <div class="live-chip"><span class="live-dot"></span> <span id="refresh-label">DATA REFRESHED —</span></div>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <button id="btn-trigger-update" class="trigger-update-btn" title="Initiate daily workflow update on GitHub">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.13 15.57a10 10 0 1 0 3.93-11.45L2.13 8"/><path d="M2.5 22v-6h6"/></svg>
+        <span>Trigger Update</span>
+      </button>
+      <div class="live-chip"><span class="live-dot"></span> <span id="refresh-label">DATA REFRESHED</span></div>
+    </div>
   </div>
 </header>
 
@@ -1812,6 +1890,51 @@ function drawHeatmap(){
     }, 1400);
   }
 })();
+
+/* ---------------- UPDATE MODAL TRIGGER ---------------- */
+(function initUpdateModal(){
+  const btn = document.getElementById('btn-trigger-update');
+  const modal = document.getElementById('update-modal');
+  const closeBtn = document.getElementById('btn-close-modal');
+  if(!btn || !modal) return;
+
+  btn.addEventListener('click', ()=>{
+    modal.classList.add('active');
+  });
+
+  if(closeBtn){
+    closeBtn.addEventListener('click', ()=>{
+      modal.classList.remove('active');
+    });
+  }
+
+  modal.addEventListener('click', (e)=>{
+    if(e.target === modal) modal.classList.remove('active');
+  });
+})();
+
 </script>
+
+<div class="update-modal-backdrop" id="update-modal">
+  <div class="update-modal-card">
+    <h3>Initiate Daily Market Update</h3>
+    <p>Market data for 20 Indian banks, repo rates, and volatility indices auto-updates <b>every day at 6:00 PM IST</b> via GitHub Actions.</p>
+    <p>To run an immediate refresh right now, initiate the GitHub Actions workflow below:</p>
+    
+    <div style="background:var(--panel-raised); padding:12px 16px; border-radius:8px; border:1px solid var(--hairline-soft); margin-bottom:16px;">
+      <div style="font-size:12px; font-weight:600; color:var(--brand); margin-bottom:4px;">Workflow: Daily Dashboard Update</div>
+      <div style="font-size:11.5px; color:var(--text-faint);">Repo: Infernalspite/Early-Warning-of-Systemic-Contagion-in-the-Indian-Financial-System</div>
+    </div>
+
+    <div class="update-modal-actions">
+      <button class="update-modal-btn secondary" id="btn-close-modal">Cancel</button>
+      <a href="https://github.com/Infernalspite/Early-Warning-of-Systemic-Contagion-in-the-Indian-Financial-System/actions/workflows/update_dashboard.yml" target="_blank" class="update-modal-btn primary">
+        <span>Run Workflow on GitHub</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      </a>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

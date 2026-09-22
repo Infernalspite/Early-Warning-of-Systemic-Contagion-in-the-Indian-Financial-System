@@ -3,7 +3,7 @@ name: Daily Dashboard Update
 on:
   schedule:
     # 12:30 UTC = 6:00 PM IST, Mon-Fri (after NSE close at 3:30 PM IST)
-    - cron: "30 12 * * 1-5"
+    - cron: "30 12 * * *"
   workflow_dispatch:   # Allow manual trigger from GitHub UI
 
 permissions:
