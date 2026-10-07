@@ -81,19 +81,23 @@ if PRICES_NSE.exists():
     for p_name, mask in period_masks.items():
         sub_df = df_ret[mask.values]
         if len(sub_df) > 10:
-            c_matrix = sub_df.corr().fillna(0)
+            # Drop banks with no real data for this period (all-zero variance)
+            active_banks = [b for b in bank_names if sub_df[b].std() > 1e-8]
+            if len(active_banks) < 2:
+                continue
+            c_matrix = sub_df[active_banks].corr().fillna(0)
             mat = []
             vals = []
-            for i, b1 in enumerate(bank_names):
+            for i, b1 in enumerate(active_banks):
                 row = []
-                for j, b2 in enumerate(bank_names):
+                for j, b2 in enumerate(active_banks):
                     v = round(float(c_matrix.loc[b1, b2]), 3)
                     row.append(v)
                     if i != j:
                         vals.append(v)
                 mat.append(row)
             corr_matrices[p_name] = {
-                "cols": bank_names,
+                "cols": active_banks,
                 "mat": mat
             }
             avg_corr_map[p_name] = round(float(np.mean(vals)), 3) if vals else 0.50
@@ -190,12 +194,12 @@ for item in cri_sorted:
 
 top10 = top10_stress
 
-# Presets for calculator with nested "values" key
+# Presets for calculator — keys MUST match data-preset attrs in template HTML
+# Template uses: calm, precrisis, crisis (reset is handled separately via calc-reset button)
 presets = {
-    "baseline": {"values": {col: feature_stats[col]["p50"] for col in feature_cols if col in feature_stats}},
-    "gfc": {"values": {col: feature_stats[col]["p90"] for col in feature_cols if col in feature_stats}},
-    "covid": {"values": {col: feature_stats[col]["max"] for col in feature_cols if col in feature_stats}},
-    "ilfs": {"values": {col: feature_stats[col]["p90"] if "spread" in col or "volatility" in col else feature_stats[col]["p50"] for col in feature_cols if col in feature_stats}},
+    "calm":      {"values": {col: feature_stats[col]["p25"] for col in feature_cols if col in feature_stats}},
+    "precrisis": {"values": {col: feature_stats[col]["p75"] if "spread" in col or "volatility" in col or "vix" in col.lower() else feature_stats[col]["p50"] for col in feature_cols if col in feature_stats}},
+    "crisis":    {"values": {col: feature_stats[col]["max"] for col in feature_cols if col in feature_stats}},
 }
 
 # Crisis events

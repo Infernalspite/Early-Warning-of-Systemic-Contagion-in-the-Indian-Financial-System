@@ -1508,6 +1508,8 @@ function drawPriceChart(){
 }
 
 /* ---------------- CORRELATION HEATMAP ---------------- */
+let heatmapSortByRisk = false;
+
 (function initHeatmap(){
   const sel = document.getElementById('period-select');
   Object.keys(DATA.corr).forEach(p=>{
@@ -1524,8 +1526,6 @@ function drawPriceChart(){
   });
   drawHeatmap();
 })();
-
-let heatmapSortByRisk = false;
 
 function corrColor(v){
   if(v==null) return 'transparent';
@@ -1608,29 +1608,35 @@ function drawHeatmap(){
 }
 
 /* ---------------- MODEL INFO ---------------- */
+try {
 (function initModelInfo(){
   const mi = DATA.model_info;
-  document.getElementById('m-type').textContent = mi.type;
-  document.getElementById('m-train').textContent = mi.train_period;
-  document.getElementById('m-test').textContent = mi.test_period;
-  document.getElementById('m-acc').textContent = mi.accuracy + '%';
-  document.getElementById('m-feat').textContent = mi.n_features;
+  if(!mi) return;
+  const setEl = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+  setEl('m-type', mi.type || '—');
+  setEl('m-train', mi.train_period || '—');
+  setEl('m-test', mi.test_period || '—');
+  setEl('m-acc', (mi.accuracy != null ? mi.accuracy : '—') + '%');
+  setEl('m-feat', mi.n_features != null ? mi.n_features : '—');
 
   const cl = document.getElementById('crisis-list');
-  Object.entries(DATA.crisis_events).forEach(([name,date])=>{
-    cl.innerHTML += `<li>${name} — ${fmtDate(date)}</li>`;
+  if(cl) Object.entries(DATA.crisis_events||{}).forEach(([name,date])=>{
+    cl.innerHTML += `<li>${name} &mdash; ${fmtDate(date)}</li>`;
   });
 
   const byCat = {Volatility:[],Momentum:[],Network:[],Macro:[],'Bank-specific':[]};
-  DATA.features.forEach(f=> byCat[f.cat] && byCat[f.cat].push(f.name));
+  (DATA.features||[]).forEach(f=> byCat[f.cat] && byCat[f.cat].push(f.name));
   const map = {Volatility:'ft-vol', Momentum:'ft-mom', Network:'ft-net', Macro:'ft-macro', 'Bank-specific':'ft-bank'};
   Object.entries(byCat).forEach(([cat,list])=>{
     const el = document.getElementById(map[cat]);
+    if(!el) return;
     list.forEach(name=>{
       el.innerHTML += `<span class="feat-tag">${(DATA.feature_meta && DATA.feature_meta[name] && DATA.feature_meta[name].label) || name}</span>`;
     });
   });
 })();
+} catch(e){ console.error('initModelInfo error:', e); }
+
 
 /* ---------------- WHAT-IF RISK CALCULATOR ---------------- */
 (function initCalculator(){
