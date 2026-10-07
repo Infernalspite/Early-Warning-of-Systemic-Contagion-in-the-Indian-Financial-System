@@ -862,6 +862,12 @@ function showPage(id){
   if(location.hash.slice(1) !== id){
     history.pushState({page:id}, '', '#'+id);
   }
+  requestAnimationFrame(()=>{
+    if(id === 'cri' && typeof drawCriChart === 'function') drawCriChart();
+    if(id === 'prices' && typeof drawPriceChart === 'function') drawPriceChart();
+    if(id === 'correlations' && typeof drawHeatmap === 'function') drawHeatmap();
+    if(id === 'network' && typeof initNetworkOn === 'function') initNetworkOn('netcanvas', 460, true);
+  });
 }
 function routeFromHash(){
   const id = location.hash.replace('#','') || 'home';
@@ -1048,7 +1054,7 @@ function initNetworkOn(canvasId, rowHeight, showTooltip){
   const dpr = Math.min(window.devicePixelRatio||1, 2);
 
   function size(){
-    const w = card.clientWidth;
+    const w = Math.max(card.clientWidth || 800, 300);
     const h = rowHeight;
     canvas.width = w*dpr; canvas.height = h*dpr;
     canvas.style.width=w+'px'; canvas.style.height=h+'px';
@@ -1226,11 +1232,13 @@ document.getElementById('home-network-preview').addEventListener('click', (e)=>{
 let criChartState = {};
 (function initCriChart(){
   const years = [];
-  for(let y=2014;y<=2026;y++) years.push(y);
+  for(let y=2005;y<=2026;y++) years.push(y);
   const fromSel = document.getElementById('year-from');
   const toSel = document.getElementById('year-to');
+  fromSel.innerHTML = '';
+  toSel.innerHTML = '';
   years.forEach(y=>{
-    fromSel.innerHTML += `<option value="${y}" ${y===2014?'selected':''}>${y}</option>`;
+    fromSel.innerHTML += `<option value="${y}" ${y===2005?'selected':''}>${y}</option>`;
     toSel.innerHTML += `<option value="${y}" ${y===2026?'selected':''}>${y}</option>`;
   });
   fromSel.addEventListener('change', drawCriChart);
@@ -1239,15 +1247,20 @@ let criChartState = {};
 
   // top 10 table
   const body = document.getElementById('top10-body');
-  DATA.top10.forEach(row=>{
-    const col = riskColor(row.v);
-    const level = row.v>=60?'HIGH':row.v>=30?'MEDIUM':'LOW';
-    body.innerHTML += `<tr>
-      <td>${row.d}</td>
-      <td class="num">${row.v.toFixed(1)}</td>
-      <td><span class="badge" style="color:${col}; background:${col}22;">${level}</span></td>
-    </tr>`;
-  });
+  if(body && Array.isArray(DATA.top10)){
+    body.innerHTML = '';
+    DATA.top10.forEach(row=>{
+      const val = (row && typeof row.v === 'number') ? row.v : (parseFloat(row.v) || 0);
+      const dt = (row && row.d) ? row.d : 'N/A';
+      const col = riskColor(val);
+      const level = val>=60?'HIGH':val>=30?'MEDIUM':'LOW';
+      body.innerHTML += `<tr>
+        <td>${dt}</td>
+        <td class="num">${val.toFixed(1)}</td>
+        <td><span class="badge" style="color:${col}; background:${col}22;">${level}</span></td>
+      </tr>`;
+    });
+  }
 
   drawCriChart();
 })();
@@ -1256,7 +1269,7 @@ function drawCriChart(){
   const canvas = document.getElementById('cri-chart');
   const card = canvas.parentElement;
   const dpr = Math.min(window.devicePixelRatio||1,2);
-  const w = card.clientWidth - 48;
+  const w = Math.max((card.clientWidth || 800) - 48, 300);
   const h = 320;
   canvas.width = w*dpr; canvas.height=h*dpr;
   canvas.style.width=w+'px'; canvas.style.height=h+'px';
@@ -1397,7 +1410,7 @@ function drawPriceChart(){
   const canvas = document.getElementById('price-chart');
   const card = canvas.parentElement;
   const dpr = Math.min(window.devicePixelRatio||1,2);
-  const w = card.clientWidth-48, h=320;
+  const w = Math.max((card.clientWidth || 800) - 48, 300), h=320;
   canvas.width=w*dpr; canvas.height=h*dpr;
   canvas.style.width=w+'px'; canvas.style.height=h+'px';
   const ctx = canvas.getContext('2d');
@@ -1406,17 +1419,19 @@ function drawPriceChart(){
 
   const banks = Array.from(selectedBanks);
   if(banks.length===0) return;
-  const dates = DATA.prices.dates;
+  const dates = (DATA.prices && DATA.prices.dates) || [];
+  if(dates.length===0) return;
 
   // find first common valid index
   let startIdx=0;
   for(let i=0;i<dates.length;i++){
-    if(banks.every(b=>DATA.prices.banks[b][i]!=null)){ startIdx=i; break; }
+    if(banks.every(b=> DATA.prices.banks && DATA.prices.banks[b] && DATA.prices.banks[b][i]!=null)){ startIdx=i; break; }
   }
   const series = {};
   banks.forEach(b=>{
-    const base = DATA.prices.banks[b][startIdx];
-    series[b] = DATA.prices.banks[b].slice(startIdx).map(v=> v!=null && base? (v/base*100): null);
+    const bankArr = (DATA.prices.banks && DATA.prices.banks[b]) || [];
+    const base = bankArr[startIdx] || 1;
+    series[b] = bankArr.slice(startIdx).map(v=> v!=null && base? (v/base*100): null);
   });
   const trimDates = dates.slice(startIdx);
 

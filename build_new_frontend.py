@@ -178,7 +178,17 @@ else:
         {"feature": "absorption_ratio", "name": "Absorption Ratio", "importance": 0.0765},
     ]
 
-top10 = f_imp_list[:10]
+# Top 10 historical CRI stress dates (peak contagion days)
+cri_sorted = sorted(cri_series, key=lambda x: -x["v"])
+top10_stress = []
+for item in cri_sorted:
+    if len(top10_stress) >= 10:
+        break
+    dt = pd.to_datetime(item["d"])
+    if not any(abs((dt - pd.to_datetime(prev["d"])).days) < 14 for prev in top10_stress):
+        top10_stress.append({"d": item["d"], "v": item["v"]})
+
+top10 = top10_stress
 
 # Presets for calculator with nested "values" key
 presets = {
@@ -238,13 +248,15 @@ DATA = {
     "forest": forest_data,
     "model_info": {
         "name": "Dynamic GNN + Random Forest",
-        "accuracy": 0.9560,
+        "type": "Dynamic GNN + Random Forest",
+        "accuracy": 95.6,
         "f1": 0.6710,
         "precision": 0.7440,
         "recall": 0.6120,
         "roc_auc": 0.9210,
-        "train_period": "2005-2021",
-        "test_period": "2022-2026"
+        "train_period": "2005 - 2021",
+        "test_period": "2022 - 2026",
+        "n_features": len(feature_cols)
     }
 }
 
