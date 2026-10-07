@@ -676,7 +676,7 @@
       <div>
         <div class="eyebrow">01 · MODEL OUTPUT</div>
         <h2>Contagion Risk Index over time</h2>
-        <p class="section-desc">Daily CRI from 2014 to present. Dotted lines mark real crises the model was trained against; dashed lines mark the medium and high risk thresholds.</p>
+        <p class="section-desc">Daily CRI from 2005 to present (defaults to 2016–2026 for detail). Y-axis auto-scales to the selected window — zoom out to see crisis spikes. Dotted lines mark real crises; dashed lines mark the Medium (30) and High (60) risk thresholds.</p>
       </div>
       <div class="controls">
         <select id="year-from"></select>
@@ -1238,7 +1238,7 @@ let criChartState = {};
   fromSel.innerHTML = '';
   toSel.innerHTML = '';
   years.forEach(y=>{
-    fromSel.innerHTML += `<option value="${y}" ${y===2005?'selected':''}>${y}</option>`;
+    fromSel.innerHTML += `<option value="${y}" ${y===2016?'selected':''}>${y}</option>`;
     toSel.innerHTML += `<option value="${y}" ${y===2026?'selected':''}>${y}</option>`;
   });
   fromSel.addEventListener('change', drawCriChart);
@@ -1292,17 +1292,22 @@ function drawCriChart(){
   const t0 = new Date(pts[0].d).getTime();
   const t1 = new Date(pts[pts.length-1].d).getTime();
   const xFor = (d)=> padL + (new Date(d).getTime()-t0)/(t1-t0)*plotW;
-  const yFor = (v)=> padT + (1-v/100)*plotH;
 
-  // gridlines + labels
+  // Auto-scale y axis to visible data with 10% headroom
+  const vMin = 0;
+  const vMax = Math.max(Math.ceil(Math.max(...pts.map(p=>p.v)) * 1.15 / 10) * 10, 10);
+  const yFor = (v)=> padT + (1-(v-vMin)/(vMax-vMin))*plotH;
+
+  // gridlines + labels (dynamic based on range)
   ctx.strokeStyle = getVar('--hairline-soft'); ctx.lineWidth=1;
   ctx.font = "10px 'IBM Plex Mono', monospace";
   ctx.fillStyle = getVar('--text-faint');
-  [0,30,60,100].forEach(v=>{
-    const y = yFor(v);
-    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(w-padR,y); ctx.stroke();
-    ctx.fillText(v, 6, y+3);
-  });
+  const gridStep = vMax > 60 ? 20 : vMax > 30 ? 10 : 5;
+  for(let gv=0; gv<=vMax; gv+=gridStep){
+    const gy = yFor(gv);
+    ctx.beginPath(); ctx.moveTo(padL,gy); ctx.lineTo(w-padR,gy); ctx.stroke();
+    ctx.fillText(gv, 6, gy+3);
+  }
 
   // crisis markers
   Object.entries(DATA.crisis_events).forEach(([name,date])=>{
@@ -1321,12 +1326,15 @@ function drawCriChart(){
     ctx.restore();
   });
 
-  // threshold lines
-  [ [60,getVar('--risk-high')], [30,getVar('--risk-mid')] ].forEach(([v,col])=>{
+  // threshold lines — only if within visible range
+  [ [60,getVar('--risk-high'),'HIGH'], [30,getVar('--risk-mid'),'MED'] ].forEach(([v,col,lbl])=>{
+    if(v > vMax) return;
     ctx.strokeStyle = col; ctx.globalAlpha=0.5; ctx.setLineDash([5,4]); ctx.lineWidth=1;
-    const y=yFor(v);
-    ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(w-padR,y); ctx.stroke();
+    const gy=yFor(v);
+    ctx.beginPath(); ctx.moveTo(padL,gy); ctx.lineTo(w-padR,gy); ctx.stroke();
     ctx.setLineDash([]); ctx.globalAlpha=1;
+    ctx.fillStyle = col; ctx.font = "9px 'IBM Plex Mono', monospace";
+    ctx.fillText(lbl, w-padR-28, gy-3);
   });
 
   // area fill
